@@ -70,7 +70,7 @@ export function createApp() {
         threshold: threshold ? Number(threshold) : undefined,
         images,
         history,
-        project: project ? { path: project.path, permissionMode: project.permission_mode } : undefined
+        project: project ? { name: project.name, path: project.path, permissionMode: project.permission_mode } : undefined
       });
 
       const persistedImages = uploadedFiles.map((f) => persistAttachment(session.id, f));

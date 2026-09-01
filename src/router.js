@@ -37,10 +37,10 @@ function decideForImageTask({ force, model }) {
 // Falls back to the old keyword heuristic only if the planner call itself
 // fails (Ollama unreachable, bad JSON) — never silently guesses on a
 // malformed-but-successful planner response.
-async function decideAuto(prompt, threshold) {
+async function decideAuto(prompt, threshold, project) {
   try {
     const installedModels = await listModels();
-    const plan = await planRoute(prompt, { installedModels, threshold });
+    const plan = await planRoute(prompt, { installedModels, threshold, project });
     return {
       backend: plan.backend,
       score: null,
@@ -166,7 +166,7 @@ export async function routeTask(prompt, opts = {}) {
   } else if (force) {
     classification = { backend: force, score: null, reasons: [`forced by caller -> ${force}`] };
   } else {
-    classification = await decideAuto(prompt, threshold);
+    classification = await decideAuto(prompt, threshold, project);
   }
 
   const backend = classification.backend;

@@ -29,7 +29,15 @@ function biasHint(threshold) {
   return 'Use balanced judgment between local and escalation.';
 }
 
-export async function planRoute(prompt, { installedModels = [], threshold = 2 } = {}) {
+function projectContextForPrompt(project) {
+  if (!project) return 'No project is open — this is a plain chat with no real files attached. A local answer is just a suggestion in the chat either way, so that\'s not a factor here.';
+  if (project.permissionMode === 'plan') {
+    return `A project ("${project.name}") is open, but it's in read-only "Plan" mode — nothing (not even Claude/Codex) can edit its files right now, so this is effectively also just an in-chat suggestion regardless of backend.`;
+  }
+  return `A project ("${project.name}") is open with real file-edit access granted (permission: "${project.permissionMode}"). IMPORTANT: only Claude and Codex can actually read or write files on disk in this app — a local Ollama model has zero file-system access, ever. If the local model answers, its "code" is only ever text printed in the chat that the user must copy in by hand themselves — it can never actually create, edit, or touch a real file, no matter how simple the change looks.`;
+}
+
+export async function planRoute(prompt, { installedModels = [], threshold = 2, project = null } = {}) {
   // The planner model itself is excluded from its own candidate list —
   // verified empirically that recommending itself for a trivial question
   // produced a bizarrely verbose, over-explained answer (three different
@@ -45,11 +53,13 @@ export async function planRoute(prompt, { installedModels = [], threshold = 2 } 
     `Cloud options (slower, cost real usage, but much more capable — full reasoning, real file/code operations, can run sub-agents for multi-part work):\n` +
     `- "claude": Claude, strong at reasoning, writing, analysis, and real coding/file work\n` +
     `- "codex": OpenAI Codex, similar capability, strong at coding and running shell commands\n\n` +
+    `Project context: ${projectContextForPrompt(project)}\n\n` +
     `${biasHint(threshold)}\n\n` +
     `Decide:\n` +
     `1. Can an installed local model fully and correctly handle this, or does it need real multi-step reasoning / coding / file operations only Claude or Codex can do well?\n` +
     `2. If local is enough, which installed model fits best? Prefer a code-focused model for code questions, the vision model only if the message is about an attached image, otherwise the general one.\n` +
     `3. If this needs Claude or Codex AND looks like a multi-part task, sketch 2-4 short suggested steps to guide its approach. Otherwise leave this empty — don't invent steps for a simple question.\n\n` +
+    `Editing-a-real-project rule: if a project with file-edit access is open (see Project context above) and the user is asking to add, build, implement, fix, refactor, or otherwise change something in their actual codebase — not just asking a question about it — choose claude or codex, even if the change sounds small. A local model literally cannot save that change to disk; it would only print code as text and leave the user to copy it in by hand, which is not what "implement/add/fix X" means when a real project is open. Stay local for genuine Q&A/explanation about the project, or when no project is open, or when the project is read-only Plan mode.\n\n` +
     `Calibration — you have a strong bias to over-escalate simple things. Correct examples:\n` +
     `- "What is 12 times 7?" -> ollama (arithmetic, a local model computes this correctly every time — this is NOT complex reasoning)\n` +
     `- "What's the capital of France?" -> ollama (a fact lookup, trivial)\n` +

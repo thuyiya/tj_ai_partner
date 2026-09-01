@@ -13,10 +13,24 @@ export const CLAUDE_MODEL_LABEL = 'claude (headless, Max plan)';
 // 'plan' is deliberately double-guarded (--restricted + --disallowedTools)
 // since it's the default for a brand-new project and for global (no-project)
 // chat, where the promise made to the user is "this can't touch your files."
+//
+// --safe-mode on every tier: confirmed empirically that this headless call
+// otherwise inherits whatever hooks/plugins/MCP servers are configured in
+// the *user's own* ~/.claude/settings.json — e.g. a SessionStart hook fired
+// and injected unrelated plugin instructions into the automated call, which
+// is both nondeterministic (depends on whatever's installed on this Mac)
+// and a plausible source of the intermittent "no result" failures seen in
+// testing. --safe-mode strips hooks/plugins/MCP/CLAUDE.md while explicitly
+// leaving auth, model selection, and permissions untouched — verified via a
+// direct spawn that OAuth login still works and a real result still comes
+// back with it on. --restricted already implies the same isolation (it
+// ignores user/project/local settings files) but doesn't apply to 'full'
+// (mutually exclusive with bypassPermissions), so this is added uniformly
+// rather than relying on that as the only guard.
 const PERMISSION_FLAGS = {
-  plan: ['--restricted', '--permission-mode', 'plan', '--disallowedTools', 'Edit Write MultiEdit NotebookEdit'],
-  edits: ['--restricted', '--permission-mode', 'acceptEdits'],
-  full: ['--permission-mode', 'bypassPermissions']
+  plan: ['--restricted', '--permission-mode', 'plan', '--disallowedTools', 'Edit Write MultiEdit NotebookEdit', '--safe-mode'],
+  edits: ['--restricted', '--permission-mode', 'acceptEdits', '--safe-mode'],
+  full: ['--permission-mode', 'bypassPermissions', '--safe-mode']
 };
 
 const TIMEOUT_MS = 300_000;
@@ -116,11 +130,11 @@ export function runClaude(prompt, opts = {}) {
       finish(() => {
         if (!finalResult) {
           // stderr often just contains a benign CLI notice (e.g. its stdin
-          // probe) rather than the real reason nothing came back — label it
-          // as such instead of surfacing that one line as if it were the
-          // whole failure.
-          const detail = stderr.trim() || `exited with code ${code}, no output`;
-          reject(new Error(`Claude CLI produced no result (${detail})`));
+          // probe) rather than the real reason nothing came back — the exit
+          // code is included every time so a future silent-failure case
+          // isn't stuck diagnosing from that one unrelated line alone.
+          const detail = stderr.trim() || 'no output';
+          reject(new Error(`Claude CLI produced no result, exit code ${code} (${detail})`));
           return;
         }
         if (finalResult.is_error) {

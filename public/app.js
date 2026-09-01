@@ -179,15 +179,25 @@ function renderContextChips() {
   });
 }
 
-const ROUTE_MODE_ORDER = ['auto', 'ollama', 'claude', 'codex'];
+const routePopover = document.getElementById('routePopover');
 function updateRoutePillLabel() {
   const labels = { auto: 'Auto-route', ollama: 'Force local', claude: 'Force Claude', codex: 'Force Codex' };
-  routePill.textContent = labels[state.routeMode];
+  routePill.textContent = `${labels[state.routeMode]} ▾`;
+  routePopover.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.mode === state.routeMode));
 }
-routePill.addEventListener('click', () => {
-  state.routeMode = ROUTE_MODE_ORDER[(ROUTE_MODE_ORDER.indexOf(state.routeMode) + 1) % ROUTE_MODE_ORDER.length];
-  updateRoutePillLabel();
-  syncSegmented();
+routePill.addEventListener('click', (e) => {
+  e.stopPropagation();
+  routePopover.hidden = !routePopover.hidden;
+});
+routePopover.querySelectorAll('button').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    state.routeMode = btn.dataset.mode;
+    routePopover.hidden = true;
+    syncSegmented();
+  });
+});
+document.addEventListener('click', (e) => {
+  if (!routePopover.hidden && !e.target.closest('.popover-wrap')) routePopover.hidden = true;
 });
 
 // ---------- GitHub connector popover ----------

@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TJ AI Partner</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <div class="library">
+      <div class="library-header">
+        <div class="brand"><span class="dot"></span> TJ AI Partner</div>
+        <button class="new-chat-btn" id="newChatBtn">+ New chat</button>
+      </div>
+
+      <div class="library-section">
+        <div class="library-section-title">
+          Projects
+          <button class="icon-btn small" id="addProjectBtn" title="Add project">+</button>
+        </div>
+        <button class="project-row" id="noProjectRow" data-id="">
+          <span class="project-name">No project (global chat)</span>
+        </button>
+        <div id="projectList"></div>
+      </div>
+
+      <div class="library-section grow">
+        <div class="library-section-title">Chats</div>
+        <div id="sessionList" class="session-list"></div>
+      </div>
+      <div class="resize-handle" id="libraryResizeHandle" style="right: -3px;"></div>
+    </div>
+
+    <div class="main">
+      <div class="topbar">
+        <div class="title" id="currentContextLabel">Global chat</div>
+        <div style="display:flex; gap:8px;">
+          <button class="icon-btn" id="sidebarToggle" title="Toggle panel">☰</button>
+        </div>
+      </div>
+
+      <div class="messages" id="messages">
+        <button class="agent-banner" id="agentBanner" hidden>
+          <span class="agent-banner-dot"></span>
+          <span id="agentBannerText"></span>
+          <span class="agent-banner-arrow">→</span>
+        </button>
+        <div class="messages-inner" id="messagesInner">
+          <div class="empty-state" id="emptyState">
+            <h2>Where should this go?</h2>
+            <p>Short, simple asks run on your local Ollama model. Anything that needs real reasoning escalates to Claude — your Max plan, no API key. Open a project for real file access, attach an image, or just start typing.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="composer-wrap">
+        <div class="context-chip-row" id="contextChipRow"></div>
+        <div class="composer">
+          <div class="attachment-row" id="attachmentRow"></div>
+          <textarea id="prompt" rows="1" placeholder="Message TJ AI Partner…"></textarea>
+          <div class="composer-controls">
+            <button class="route-pill" id="routePill" title="Change routing mode">Auto-route</button>
+            <div class="composer-actions">
+              <input type="file" id="fileInput" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden />
+              <div class="popover-wrap">
+                <button class="round-btn" id="ghBtn" title="Attach GitHub issue/PR">🔗</button>
+                <div class="popover" id="ghPopover" hidden>
+                  <div class="field-label" style="margin-top:0;">Repo</div>
+                  <input class="full" id="ghRepo" placeholder="owner/repo" />
+                  <div class="segmented" style="margin-top:8px;">
+                    <button data-type="issue" class="active">Issue</button>
+                    <button data-type="pr">PR</button>
+                  </div>
+                  <div class="field-label">Number</div>
+                  <input class="full" id="ghNumber" placeholder="123" />
+                  <div class="pull-row"><button id="ghFetchBtn" style="flex:1;">Attach</button></div>
+                  <div class="empty-mini" id="ghError"></div>
+                </div>
+              </div>
+              <button class="round-btn" id="attachBtn" title="Attach image">📎</button>
+              <button class="send-btn" id="sendBtn" title="Send" disabled>➤</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar" id="sidebar">
+      <div class="resize-handle" id="sidebarResizeHandle" style="left: -3px;"></div>
+      <div class="sidebar-tabs">
+        <button class="active" data-tab="insights">Insights</button>
+        <button data-tab="agents">Agents <span class="count-chip" id="agentsTabCount" hidden>0</span></button>
+        <button data-tab="security">Security <span class="count-chip severity-dot" id="securityTabCount" hidden>0</span></button>
+      </div>
+
+      <div id="agentsTab" class="sidebar-tab-panel" hidden>
+        <div class="panel">
+          <div class="panel-title">Sub-agent activity</div>
+          <div id="agentsFeed"><div class="empty-mini">No sub-agents have run yet. They show up here when Claude delegates part of a task (needs a project with Edits or Full access).</div></div>
+        </div>
+      </div>
+
+      <div id="securityTab" class="sidebar-tab-panel" hidden>
+        <div class="panel">
+          <div class="panel-title">Live security review</div>
+          <p class="empty-mini" style="margin-bottom:10px;">A local model (always Ollama, never Claude) reviews every file edit and shell command as it happens — in a project with Edits or Full access.</p>
+          <div id="securityFeed"><div class="empty-mini">No findings yet.</div></div>
+        </div>
+      </div>
+
+      <div id="insightsTab" class="sidebar-tab-panel">
+      <div class="panel" id="projectPermPanel" hidden>
+        <div class="panel-title">This project's access</div>
+        <div class="segmented" id="projectPermSegmented">
+          <button data-mode="plan">Plan</button>
+          <button data-mode="edits">Edits</button>
+          <button data-mode="full">Full</button>
+        </div>
+        <div class="empty-mini" id="projectPermHint"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Agents running <span class="count-chip" id="jobCount">0</span></div>
+        <div id="jobList"><div class="empty-mini">Idle — nothing running.</div></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Connectors</div>
+        <div id="connectorList"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Accounts</div>
+        <div id="onboardingStatus"></div>
+
+        <div class="field-label">Claude</div>
+        <div id="claudeCredList"></div>
+        <div class="pull-row">
+          <input class="full" id="claudeKeyLabel" placeholder="label, e.g. Personal key" />
+        </div>
+        <div class="pull-row">
+          <input class="full" id="claudeKeyInput" type="password" placeholder="sk-ant-..." />
+          <button id="claudeKeyAddBtn">Add</button>
+        </div>
+
+        <div class="field-label">Codex / OpenAI</div>
+        <div class="empty-mini" style="margin-bottom:6px;">⚠ Switching Codex credentials changes what `codex` uses everywhere on this Mac, including your terminal — not scoped to this app.</div>
+        <div id="codexCredList"></div>
+        <div class="pull-row">
+          <input class="full" id="codexKeyLabel" placeholder="label, e.g. Personal key" />
+        </div>
+        <div class="pull-row">
+          <input class="full" id="codexKeyInput" type="password" placeholder="sk-..." />
+          <button id="codexKeyAddBtn">Add</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Settings</div>
+
+        <div class="field-label">Routing mode</div>
+        <div class="segmented" id="routeSegmented">
+          <button data-mode="auto" class="active">Auto</button>
+          <button data-mode="ollama">Local</button>
+          <button data-mode="claude">Claude</button>
+          <button data-mode="codex">Codex</button>
+        </div>
+        <div class="empty-mini" style="margin-top:6px;">Image generation happens automatically — just ask for one, in Auto or Local mode.</div>
+
+        <div id="localModelSection">
+          <div class="field-label">Local model</div>
+          <select class="full" id="modelSelect"></select>
+
+          <div class="field-label">Auto-route sensitivity</div>
+          <div class="slider-row">
+            <input type="range" id="thresholdSlider" min="-4" max="8" step="1" value="2" />
+            <span class="val" id="thresholdVal">2</span>
+          </div>
+
+          <div class="field-label">Installed models</div>
+          <div id="installedModelList"></div>
+
+          <div class="field-label">Download more models</div>
+          <div class="chip-row" id="modelChips"></div>
+          <div class="pull-row">
+            <input class="full" id="pullInput" placeholder="e.g. qwen2.5:7b" />
+            <button id="pullBtn">Pull</button>
+          </div>
+          <div class="pull-progress" id="pullProgress" style="display:none;">
+            <div class="pull-progress-row">
+              <div id="pullLabel"></div>
+              <button id="pullStopBtn" class="stop-btn">Stop</button>
+            </div>
+            <div class="pull-bar"><div id="pullBarFill" style="width:0%"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Token usage by model</div>
+        <div id="modelUsageList"><div class="empty-mini">No requests yet.</div></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Stats</div>
+        <div class="tile-list" id="statTiles"></div>
+      </div>
+
+      <div class="panel">
+        <div class="legend">
+          <span><span class="swatch" style="background:var(--series-local)"></span>Local</span>
+          <span><span class="swatch" style="background:var(--series-claude)"></span>Claude</span>
+          <span><span class="swatch" style="background:var(--series-codex)"></span>Codex</span>
+        </div>
+        <div id="chart"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Recent</div>
+        <table class="mini-table" id="recentTable"><tbody></tbody></table>
+      </div>
+      </div>
+    </div>
+  </div>
+  <div class="tooltip" id="tooltip"></div>
+
+  <div class="modal-overlay" id="modalOverlay" hidden>
+    <div class="modal-panel">
+      <div class="modal-header">
+        <button class="icon-btn small" id="modalBackBtn" hidden title="Back">←</button>
+        <div class="modal-title" id="modalTitle"></div>
+        <button class="icon-btn small" id="modalCloseBtn" title="Close">✕</button>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
+    </div>
+  </div>
+
+  <script src="vendor/mermaid.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

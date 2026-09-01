@@ -1,0 +1,44 @@
+{
+  "name": "ai-with-tj",
+  "version": "1.0.0",
+  "description": "Desktop app that routes each chat message between a local Ollama model and Claude Code (Max plan), with projects, chat history, and connector plugins.",
+  "type": "module",
+  "private": true,
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "node --no-warnings src/server.js",
+    "dev": "node --no-warnings --watch src/server.js",
+    "cli": "node --no-warnings src/cli.js",
+    "electron": "electron .",
+    "dist": "electron-builder"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "mermaid": "^11.17.2",
+    "multer": "^2.3.0"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.tj.ai-partner",
+    "productName": "TJ AI Partner",
+    "files": [
+      "electron/**/*",
+      "src/**/*",
+      "public/**/*",
+      "build/icon-1024.png",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "icon": "build/icon.icns",
+    "asar": false,
+    "mac": {
+      "category": "public.app-category.developer-tools"
+    },
+    "directories": {
+      "output": "dist"
+    }
+  }
+}

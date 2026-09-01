@@ -115,7 +115,12 @@ export function runClaude(prompt, opts = {}) {
     child.on('close', (code) => {
       finish(() => {
         if (!finalResult) {
-          reject(new Error(stderr.trim() || `claude exited with code ${code}`));
+          // stderr often just contains a benign CLI notice (e.g. its stdin
+          // probe) rather than the real reason nothing came back — label it
+          // as such instead of surfacing that one line as if it were the
+          // whole failure.
+          const detail = stderr.trim() || `exited with code ${code}, no output`;
+          reject(new Error(`Claude CLI produced no result (${detail})`));
           return;
         }
         if (finalResult.is_error) {

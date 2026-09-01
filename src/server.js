@@ -8,7 +8,7 @@ import {
   recentRequests, stats,
   createProject, listProjects, getProject, updateProjectPermission, deleteProject,
   createSession, listSessions, getSession, touchSession, renameSession, deleteSession,
-  addMessage, listMessages
+  addMessage, listMessages, listAgentHistory
 } from './db.js';
 import { listModels, deleteModel, DEFAULT_MODEL } from './backends/ollama.js';
 import { startPull, pullStatus, cancelPull } from './backends/modelPull.js';
@@ -70,7 +70,8 @@ export function createApp() {
         threshold: threshold ? Number(threshold) : undefined,
         images,
         history,
-        project: project ? { name: project.name, path: project.path, permissionMode: project.permission_mode } : undefined
+        project: project ? { name: project.name, path: project.path, permissionMode: project.permission_mode } : undefined,
+        sessionId: session.id
       });
 
       const persistedImages = uploadedFiles.map((f) => persistAttachment(session.id, f));
@@ -78,13 +79,28 @@ export function createApp() {
         ? [persistAttachment(session.id, { path: result.generatedImagePath })]
         : [];
 
+      // The job's real tool-call timeline + security findings live only in
+      // jobs.js's 20s in-memory window — copy them onto the message now so
+      // the Agents/Security tabs have a permanent history to show later,
+      // each entry already carrying this session_id to jump back to the chat.
+      // `pendingUsage` is whatever turn(s) never got attached to a tool-call
+      // step (most often the final answer itself, which has no tool_use) —
+      // folded in as its own synthetic step so a token breakdown still adds
+      // up to the true total instead of quietly losing that chunk.
+      const job = getJob(result.jobId);
+      const timeline = job?.timeline ? [...job.timeline] : [];
+      if (job?.pendingUsage) {
+        timeline.push({ id: 'final', icon: 'sparkles', title: 'Model reasoning / final answer', status: 'completed', usage: job.pendingUsage });
+      }
+
       addMessage({ sessionId: session.id, role: 'user', content: prompt, images: persistedImages });
       addMessage({
         sessionId: session.id, role: 'assistant', content: result.text, images: generatedImages,
         backend: result.backend, model: result.model, score: result.score,
         latencyMs: result.latencyMs, costUsd: result.costUsd,
         tokensIn: result.tokensIn, tokensOut: result.tokensOut,
-        visualization: result.visualization
+        visualization: result.visualization,
+        timeline, securityFindings: job?.securityFindings
       });
       touchSession(session.id, prompt.slice(0, 60));
 
@@ -94,10 +110,10 @@ export function createApp() {
       const prompt = typeof req.body?.prompt === 'string' ? req.body.prompt : '';
       if (session) {
         addMessage({ sessionId: session.id, role: 'user', content: prompt, images: [] });
-        addMessage({ sessionId: session.id, role: 'assistant', content: '', error: error.message });
+        addMessage({ sessionId: session.id, role: 'assistant', content: '', error: error.message, backend: error.backend, model: error.model });
         touchSession(session.id, prompt.slice(0, 60));
       }
-      res.status(502).json({ error: error.message, sessionId: session?.id });
+      res.status(502).json({ error: error.message, sessionId: session?.id, backend: error.backend });
     }
   });
 
@@ -410,6 +426,14 @@ export function createApp() {
     const job = getJob(Number(req.params.id));
     if (!job) return res.status(404).json({ error: 'job not found or expired' });
     res.json(job);
+  });
+
+  // Persistent agent-run + security-finding history — jobs.js only keeps a
+  // job for ~20s after it finishes, so this is what the Agents/Security tabs
+  // fall back to for anything older, each entry already carrying the
+  // session_id it came from so the UI can jump straight back to that chat.
+  app.get('/api/agent-history', (req, res) => {
+    res.json(listAgentHistory(Math.min(Number(req.query.limit) || 30, 200)));
   });
 
   return app;

@@ -9,7 +9,7 @@ import { runCodex } from './backends/codex.js';
 import { generateImage, IMAGE_MODEL_LABEL } from './backends/imageGen.js';
 import { visualizeResponse, securityReviewSnippet } from './backends/localAnalysis.js';
 import { logRequest } from './db.js';
-import { startJob, finishJob, recordAgentEvent, recordSecurityFindings, addTimelineStep, updateTimelineStep } from './jobs.js';
+import { startJob, finishJob, recordAgentEvent, recordSecurityFindings, addTimelineStep, updateTimelineStep, attachUsageToRecentSteps } from './jobs.js';
 import { activeClaudeApiKey } from './credentials.js';
 import { buildProjectContext } from './projectAssets.js';
 
@@ -113,6 +113,11 @@ function scanClaudeEvent(jobId, event) {
       .then((findings) => recordSecurityFindings(jobId, action, findings))
       .catch(() => {});
   }
+  // Each assistant event IS one API turn and already carries that turn's own
+  // real usage — attribute it to whatever step(s) this same event just added
+  // (a plain text-only turn with no tool_use adds no new steps, so its usage
+  // simply carries forward to the next turn that does).
+  attachUsageToRecentSteps(jobId, event.message?.usage);
 }
 
 // Codex reports real shell commands as `command_execution` items (its
@@ -120,6 +125,15 @@ function scanClaudeEvent(jobId, event) {
 // way Claude does — see codex.js). Unlike Claude, Codex gives a genuine
 // started -> completed pair (matched by item.id) with a real duration.
 function scanCodexEvent(jobId, event) {
+  // Unlike Claude (where one stream event both adds a step AND carries that
+  // step's usage), Codex reports command execution and turn-level usage as
+  // separate event types — usage for a turn arrives after the item(s) it
+  // covers, so it attaches to whatever steps have accumulated since the
+  // last turn rather than the step that's currently in this event.
+  if (event.type === 'turn.completed') {
+    attachUsageToRecentSteps(jobId, event.usage);
+    return;
+  }
   if (event.type !== 'item.started' && event.type !== 'item.completed') return;
   if (event.item?.type !== 'command_execution') return;
 
@@ -144,7 +158,7 @@ function scanCodexEvent(jobId, event) {
 }
 
 export async function routeTask(prompt, opts = {}) {
-  const { force, model, images = [], history = [], threshold, project } = opts;
+  const { force, model, images = [], history = [], threshold, project, sessionId } = opts;
   const hasImages = images.length > 0;
 
   // No manual "Image" mode — asking for a picture under Auto or Local (the
@@ -171,7 +185,7 @@ export async function routeTask(prompt, opts = {}) {
 
   const backend = classification.backend;
   const effectiveModel = backend === 'ollama' ? classification.localModel || model || DEFAULT_MODEL : model;
-  const jobId = startJob({ backend, model: backend === 'image' ? IMAGE_MODEL_LABEL : effectiveModel || DEFAULT_MODEL, prompt });
+  const jobId = startJob({ backend, model: backend === 'image' ? IMAGE_MODEL_LABEL : effectiveModel || DEFAULT_MODEL, prompt, sessionId });
 
   // Project sources/skill are injected as context text for every backend —
   // including local Ollama, which has no file-system access at all — the
@@ -267,6 +281,11 @@ export async function routeTask(prompt, opts = {}) {
       hasImage: hasImages,
       error: error.message
     });
+    // The backend that was actually being attempted, so the caller can
+    // persist/display it instead of falling back to a guess — a failed
+    // Claude/Codex CLI call must never render as "Local" in the chat.
+    error.backend = backend;
+    error.model = effectiveModel;
     throw error;
   } finally {
     finishJob(jobId);

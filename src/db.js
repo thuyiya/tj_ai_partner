@@ -62,6 +62,8 @@ db.exec(`
     tokens_out INTEGER,
     error TEXT,
     visualization TEXT,
+    timeline TEXT,
+    security_findings TEXT,
     created_at TEXT NOT NULL
   );
 
@@ -81,6 +83,13 @@ db.exec(`
     created_at TEXT NOT NULL
   );
 `);
+
+// `CREATE TABLE IF NOT EXISTS` only helps a brand-new database — an existing
+// messages table (this app's own local dev db included) predates these two
+// columns and needs them added explicitly.
+const existingMessageColumns = new Set(db.prepare('PRAGMA table_info(messages)').all().map((c) => c.name));
+if (!existingMessageColumns.has('timeline')) db.exec('ALTER TABLE messages ADD COLUMN timeline TEXT');
+if (!existingMessageColumns.has('security_findings')) db.exec('ALTER TABLE messages ADD COLUMN security_findings TEXT');
 
 const insertStatement = db.prepare(`
   INSERT INTO requests
@@ -249,8 +258,8 @@ export function deleteSession(id) {
 export function addMessage(row) {
   db.prepare(
     `INSERT INTO messages
-      (session_id, role, content, images, backend, model, score, latency_ms, cost_usd, tokens_in, tokens_out, error, visualization, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      (session_id, role, content, images, backend, model, score, latency_ms, cost_usd, tokens_in, tokens_out, error, visualization, timeline, security_findings, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     row.sessionId,
     row.role,
@@ -265,6 +274,8 @@ export function addMessage(row) {
     row.tokensOut ?? null,
     row.error ?? null,
     row.visualization ? JSON.stringify(row.visualization) : null,
+    row.timeline?.length ? JSON.stringify(row.timeline) : null,
+    row.securityFindings?.length ? JSON.stringify(row.securityFindings) : null,
     new Date().toISOString()
   );
 }
@@ -277,6 +288,35 @@ export function listMessages(sessionId) {
       ...m,
       images: JSON.parse(m.images ?? '[]'),
       visualization: m.visualization ? JSON.parse(m.visualization) : null
+    }));
+}
+
+// Agent-run + security-finding history that survives past the 20s in-memory
+// job window (jobs.js) — sourced from what's already persisted on each
+// assistant message, so "view chat" is just that message's own session_id.
+// The prompt is pulled from the nearest preceding user message in the same
+// session, since the assistant row itself only stores the response.
+export function listAgentHistory(limit = 30) {
+  return db
+    .prepare(
+      `SELECT m.id, m.session_id AS sessionId, m.backend, m.model, m.created_at AS createdAt,
+              m.timeline, m.security_findings AS securityFindings,
+              m.tokens_in AS tokensIn, m.tokens_out AS tokensOut, m.cost_usd AS costUsd,
+              s.title AS sessionTitle, p.name AS projectName,
+              (SELECT content FROM messages um WHERE um.session_id = m.session_id AND um.role = 'user' AND um.id < m.id ORDER BY um.id DESC LIMIT 1) AS prompt
+       FROM messages m
+       JOIN sessions s ON s.id = m.session_id
+       LEFT JOIN projects p ON p.id = s.project_id
+       WHERE m.role = 'assistant' AND m.backend IN ('claude', 'codex')
+         AND (m.timeline IS NOT NULL OR m.security_findings IS NOT NULL)
+       ORDER BY m.id DESC
+       LIMIT ?`
+    )
+    .all(limit)
+    .map((row) => ({
+      ...row,
+      timeline: row.timeline ? JSON.parse(row.timeline) : [],
+      securityFindings: row.securityFindings ? JSON.parse(row.securityFindings) : []
     }));
 }
 

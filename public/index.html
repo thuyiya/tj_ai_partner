@@ -29,6 +29,13 @@
         <div class="library-section-title">Chats</div>
         <div id="sessionList" class="session-list"></div>
       </div>
+
+      <div class="library-footer">
+        <button class="account-btn" id="accountBtn" title="Accounts & credentials">
+          <span class="account-avatar" id="accountAvatarIcon"></span>
+          <span class="account-label">Accounts</span>
+        </button>
+      </div>
       <div class="resize-handle" id="libraryResizeHandle" style="right: -3px;"></div>
     </div>
 
@@ -99,6 +106,11 @@
           <div class="panel-title">Sub-agent activity</div>
           <div id="agentsFeed"><div class="empty-mini">No sub-agents have run yet. They show up here when Claude delegates part of a task (needs a project with Edits or Full access).</div></div>
         </div>
+        <div class="panel">
+          <div class="panel-title">History</div>
+          <p class="empty-mini" style="margin-bottom:10px;">Past Claude/Codex runs — click one to jump back to that chat.</p>
+          <div id="agentsHistoryFeed"><div class="empty-mini">Nothing yet.</div></div>
+        </div>
       </div>
 
       <div id="securityTab" class="sidebar-tab-panel" hidden>
@@ -106,6 +118,11 @@
           <div class="panel-title">Live security review</div>
           <p class="empty-mini" style="margin-bottom:10px;">A local model (always Ollama, never Claude) reviews every file edit and shell command as it happens — in a project with Edits or Full access.</p>
           <div id="securityFeed"><div class="empty-mini">No findings yet.</div></div>
+        </div>
+        <div class="panel">
+          <div class="panel-title">History</div>
+          <p class="empty-mini" style="margin-bottom:10px;">Past findings — click one to jump back to that chat.</p>
+          <div id="securityHistoryFeed"><div class="empty-mini">Nothing yet.</div></div>
         </div>
       </div>
 
@@ -128,32 +145,6 @@
       <div class="panel">
         <div class="panel-title">Connectors</div>
         <div id="connectorList"></div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-title">Accounts</div>
-        <div id="onboardingStatus"></div>
-
-        <div class="field-label">Claude</div>
-        <div id="claudeCredList"></div>
-        <div class="pull-row">
-          <input class="full" id="claudeKeyLabel" placeholder="label, e.g. Personal key" />
-        </div>
-        <div class="pull-row">
-          <input class="full" id="claudeKeyInput" type="password" placeholder="sk-ant-..." />
-          <button id="claudeKeyAddBtn">Add</button>
-        </div>
-
-        <div class="field-label">Codex / OpenAI</div>
-        <div class="empty-mini" style="margin-bottom:6px;">⚠ Switching Codex credentials changes what `codex` uses everywhere on this Mac, including your terminal — not scoped to this app.</div>
-        <div id="codexCredList"></div>
-        <div class="pull-row">
-          <input class="full" id="codexKeyLabel" placeholder="label, e.g. Personal key" />
-        </div>
-        <div class="pull-row">
-          <input class="full" id="codexKeyInput" type="password" placeholder="sk-..." />
-          <button id="codexKeyAddBtn">Add</button>
-        </div>
       </div>
 
       <div class="panel">

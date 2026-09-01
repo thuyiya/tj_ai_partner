@@ -8,18 +8,20 @@ let nextStepId = 1;
 // process, not just a spinner that vanishes.
 const LINGER_MS = 20_000;
 
-export function startJob({ backend, model, prompt }) {
+export function startJob({ backend, model, prompt, sessionId }) {
   const id = nextId++;
   jobs.set(id, {
     id,
     backend,
     model,
+    sessionId: sessionId ?? null,
     prompt: prompt.slice(0, 140),
     startedAt: Date.now(),
     status: 'running',
     subagents: new Map(),
     securityFindings: [],
-    timeline: []
+    timeline: [],
+    usageAssignedUpTo: 0
   });
   return id;
 }
@@ -105,6 +107,36 @@ export function updateTimelineStep(jobId, key, patch) {
   const step = job.timeline.find((s) => s.key === key);
   if (!step) return;
   Object.assign(step, patch, { completedAt: Date.now() });
+}
+
+function mergeUsage(a, b) {
+  if (!a) return b;
+  const out = { ...a };
+  for (const [key, value] of Object.entries(b)) {
+    if (typeof value === 'number') out[key] = (out[key] ?? 0) + value;
+  }
+  return out;
+}
+
+// Real per-turn token usage (Claude's `assistant` events, Codex's
+// `turn.completed` events both report it live) attributed to whichever
+// timeline steps were added since the last turn — never estimated or
+// evenly split, so a "which step cost the tokens" breakdown is only ever
+// built from numbers the backend itself actually reported. A turn that adds
+// no new step (a text-only planning turn, or the final answer) has nowhere
+// to attach its usage yet — it accumulates in `pendingUsage` and rides along
+// onto whichever step comes next, rather than being silently dropped.
+export function attachUsageToRecentSteps(jobId, usage) {
+  const job = jobs.get(jobId);
+  if (!job) return;
+  if (usage) job.pendingUsage = mergeUsage(job.pendingUsage, usage);
+  if (!job.pendingUsage) return;
+
+  const from = job.usageAssignedUpTo ?? 0;
+  if (from >= job.timeline.length) return;
+  for (let i = from; i < job.timeline.length; i++) job.timeline[i].usage = job.pendingUsage;
+  job.usageAssignedUpTo = job.timeline.length;
+  job.pendingUsage = null;
 }
 
 function serialize(job) {

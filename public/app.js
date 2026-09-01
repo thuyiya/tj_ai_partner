@@ -25,7 +25,8 @@ const ICON_PATHS = {
   'arrow-left': '<path d="m12 19-7-7 7-7" /><path d="M19 12H5" />',
   'shield-check': '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" /><path d="m9 12 2 2 4-4" />',
   'code-2': '<path d="m18 16 4-4-4-4" /><path d="m6 8-4 4 4 4" /><path d="m14.5 4-5 16" />',
-  sparkles: '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />'
+  sparkles: '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />',
+  user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />'
 };
 
 function icon(name, size = 15) {
@@ -70,7 +71,8 @@ const state = {
   currentSessionId: null,
   currentProjectId: null,
   projects: [],
-  sessions: []
+  sessions: [],
+  agentHistory: []
 };
 
 // ---------- helpers ----------
@@ -106,8 +108,12 @@ const BACKEND_META = {
   // excluded from the categorical activity chart rather than forcing it.
   image: { label: 'Image', cls: 'image' }
 };
+// Never guess a real backend when one isn't known (e.g. an error that hit
+// before routing even finished) — silently defaulting to "Local" is worse
+// than an honest "Unknown", since it misattributes cost/blame.
+const UNKNOWN_BACKEND_META = { label: 'Unknown', cls: 'unknown' };
 function badge(backend, extra = '') {
-  const meta = BACKEND_META[backend] ?? BACKEND_META.ollama;
+  const meta = BACKEND_META[backend] ?? UNKNOWN_BACKEND_META;
   return `<span class="badge ${meta.cls}">${escapeHtml(meta.label)}${extra}</span>`;
 }
 async function getJSON(url, opts) {
@@ -249,15 +255,16 @@ function renderConversation() {
     if (m.error) {
       return `<div class="msg assistant" data-i="${i}">
         <div class="bubble">${escapeHtml(m.error)}</div>
-        <div class="msg-meta">${badge(m.backend || 'ollama')} <span class="badge error">error</span></div>
+        <div class="msg-meta">${badge(m.backend)} <span class="badge error">error</span></div>
       </div>`;
     }
     const viz = m.visualization;
     const generated = m.images?.length ? `<div class="generated-images">${m.images.map((src) => `<img src="${src}" />`).join('')}</div>` : '';
+    const tokenTotal = (m.meta?.tokensIn ?? 0) + (m.meta?.tokensOut ?? 0);
     return `<div class="msg assistant" data-i="${i}">
       ${generated}
       <div class="bubble">${escapeHtml(m.content)}</div>
-      <div class="msg-meta">${badge(m.backend)} <span>${fmtMs(m.meta?.latencyMs)} · ${fmtMoney(m.meta?.costUsd)}${m.meta?.score != null ? ` · score ${m.meta.score}` : ''}</span></div>
+      <div class="msg-meta">${badge(m.backend)} <span>${fmtMs(m.meta?.latencyMs)} · ${fmtMoney(m.meta?.costUsd)}${tokenTotal ? ` · ${fmtTokens(tokenTotal)} tok (${fmtTokens(m.meta?.tokensIn)} in / ${fmtTokens(m.meta?.tokensOut)} out)` : ''}${m.meta?.score != null ? ` · score ${m.meta.score}` : ''}</span></div>
       ${viz ? `<button class="viz-btn" data-viz-open="${i}">${icon('sparkles', 12)} Visualize</button>` : ''}
     </div>`;
   }).join('');
@@ -356,8 +363,8 @@ async function send() {
   }
 
   state.conversation[pendingIndex] = ok
-    ? { role: 'assistant', content: data.text, backend: data.backend, visualization: data.visualization, images: data.images, meta: { latencyMs: data.latencyMs, costUsd: data.costUsd, score: data.score } }
-    : { role: 'assistant', error: data.error, backend: state.routeMode !== 'auto' ? state.routeMode : 'ollama' };
+    ? { role: 'assistant', content: data.text, backend: data.backend, visualization: data.visualization, images: data.images, meta: { latencyMs: data.latencyMs, costUsd: data.costUsd, score: data.score, tokensIn: data.tokensIn, tokensOut: data.tokensOut } }
+    : { role: 'assistant', error: data.error, backend: data.backend ?? (state.routeMode !== 'auto' ? state.routeMode : undefined) };
 
   renderConversation();
   refreshSidebar();
@@ -823,7 +830,7 @@ async function openSession(id) {
   const messages = await getJSON(`/api/sessions/${id}/messages`);
   state.conversation = messages.map((m) => m.role === 'user'
     ? { role: 'user', content: m.content, images: m.images }
-    : { role: 'assistant', content: m.content, backend: m.backend, visualization: m.visualization, images: m.images, error: m.error || undefined, meta: { latencyMs: m.latency_ms, costUsd: m.cost_usd, score: m.score } });
+    : { role: 'assistant', content: m.content, backend: m.backend, visualization: m.visualization, images: m.images, error: m.error || undefined, meta: { latencyMs: m.latency_ms, costUsd: m.cost_usd, score: m.score, tokensIn: m.tokens_in, tokensOut: m.tokens_out } });
   renderConversation();
   renderProjects();
   renderSessions();
@@ -862,7 +869,44 @@ async function loadConnectors() {
 // ---------- accounts: onboarding status + credentials ----------
 // The onboarding checklist and the credential switcher are the same panel —
 // a fresh install needs both "is anything logged in" and "add a key instead"
-// in one place, not a separate wizard that's gone after first run.
+// in one place, not a separate wizard that's gone after first run. Lives in
+// a modal (opened from the bottom-left account button) rather than taking up
+// permanent space in the always-visible Insights sidebar.
+
+const ACCOUNTS_MODAL_HTML = `
+  <div id="onboardingStatus"></div>
+
+  <div class="field-label" style="margin-top:14px;">Claude</div>
+  <div id="claudeCredList"></div>
+  <div class="pull-row">
+    <input class="full" id="claudeKeyLabel" placeholder="label, e.g. Personal key" />
+  </div>
+  <div class="pull-row">
+    <input class="full" id="claudeKeyInput" type="password" placeholder="sk-ant-..." />
+    <button id="claudeKeyAddBtn">Add</button>
+  </div>
+
+  <div class="field-label">Codex / OpenAI</div>
+  <div class="empty-mini" style="margin-bottom:6px;">⚠ Switching Codex credentials changes what \`codex\` uses everywhere on this Mac, including your terminal — not scoped to this app.</div>
+  <div id="codexCredList"></div>
+  <div class="pull-row">
+    <input class="full" id="codexKeyLabel" placeholder="label, e.g. Personal key" />
+  </div>
+  <div class="pull-row">
+    <input class="full" id="codexKeyInput" type="password" placeholder="sk-..." />
+    <button id="codexKeyAddBtn">Add</button>
+  </div>
+`;
+
+function openAccountsModal() {
+  openModal('Accounts', ACCOUNTS_MODAL_HTML);
+  loadOnboarding();
+  loadCredentials();
+  wireCredentialForm('claude');
+  wireCredentialForm('codex');
+}
+document.getElementById('accountBtn').addEventListener('click', openAccountsModal);
+document.getElementById('accountAvatarIcon').innerHTML = icon('user', 15);
 
 async function loadOnboarding() {
   const status = await getJSON('/api/onboarding');
@@ -872,7 +916,17 @@ async function loadOnboarding() {
       <span class="cname">${escapeHtml(label)}</span>
       <span class="cdetail">${escapeHtml(detail)}</span>
     </div>`;
-  document.getElementById('onboardingStatus').innerHTML = [
+
+  // The account button lives outside any modal and stays on screen — a
+  // small dot on it is the only always-visible signal that something needs
+  // attention now that this checklist itself is tucked inside a dialog.
+  const allGood = status.claude.loggedIn && status.codex.loggedIn && status.ollama.reachable;
+  document.getElementById('accountBtn').classList.toggle('needs-attention', !allGood);
+
+  // Only present while the Accounts modal is actually open.
+  const target = document.getElementById('onboardingStatus');
+  if (!target) return;
+  target.innerHTML = [
     row(status.claude.loggedIn, 'Claude CLI', status.claude.loggedIn ? `${status.claude.email ?? ''} (${status.claude.plan ?? 'unknown plan'})` : status.claude.installed ? 'Not logged in — run `claude auth login`' : 'Not installed'),
     row(status.codex.loggedIn, 'Codex CLI', status.codex.loggedIn ? `via ${status.codex.method ?? 'unknown'}` : status.codex.installed ? 'Not logged in — run `codex login`' : 'Not installed'),
     row(status.ollama.reachable, 'Ollama', status.ollama.reachable ? 'Running' : 'Not reachable — start it with `brew services start ollama`'),
@@ -881,6 +935,9 @@ async function loadOnboarding() {
 }
 
 async function loadCredentials() {
+  // Only meaningful while the Accounts modal is open — its lists don't
+  // exist otherwise.
+  if (!document.getElementById('claudeCredList')) return;
   for (const provider of ['claude', 'codex']) {
     const creds = await getJSON(`/api/credentials?provider=${provider}`);
     const list = document.getElementById(`${provider}CredList`);
@@ -925,8 +982,6 @@ function wireCredentialForm(provider) {
     } catch (err) { alert(err.message); }
   });
 }
-wireCredentialForm('claude');
-wireCredentialForm('codex');
 
 // ---------- sidebar: active jobs ----------
 
@@ -938,6 +993,8 @@ const agentsFeed = document.getElementById('agentsFeed');
 const agentsTabCount = document.getElementById('agentsTabCount');
 const securityFeed = document.getElementById('securityFeed');
 const securityTabCount = document.getElementById('securityTabCount');
+const agentsHistoryFeed = document.getElementById('agentsHistoryFeed');
+const securityHistoryFeed = document.getElementById('securityHistoryFeed');
 const SEVERITY_RANK = { critical: 3, warning: 2, info: 1 };
 
 function agentStatusIcon(status) {
@@ -1011,6 +1068,7 @@ async function refreshJobs() {
               <span>${status === 'running' ? 'Running' : status === 'failed' ? 'Failed' : 'Completed'}</span>
               <div class="task-progress-track"><div class="task-progress-fill ${status}"></div></div>
               <span>${status === 'running' ? fmtElapsed(job.startedAt) : fmtMs((job.finishedAt ?? Date.now()) - job.startedAt)}</span>
+              ${job.sessionId ? `<button class="view-chat-link" data-view-chat="${job.sessionId}">View chat</button>` : ''}
             </div>
           </div>
         </div>`;
@@ -1018,6 +1076,9 @@ async function refreshJobs() {
 
     agentsFeed.querySelectorAll('[data-job-id]').forEach((card) => {
       card.addEventListener('click', () => openAgentDetail(Number(card.dataset.jobId)));
+    });
+    agentsFeed.querySelectorAll('[data-view-chat]').forEach((btn) => {
+      btn.addEventListener('click', (e) => { e.stopPropagation(); openSession(Number(btn.dataset.viewChat)); });
     });
   } else {
     agentsTabCount.hidden = true;
@@ -1028,7 +1089,7 @@ async function refreshJobs() {
   // Always produced by the local model reviewing a real Edit/Write/Bash
   // tool call the instant it streams in — never Claude reviewing itself.
   const allFindings = allJobs
-    .flatMap((job) => job.securityFindings.map((f) => ({ ...f, jobPrompt: job.prompt })))
+    .flatMap((job) => job.securityFindings.map((f) => ({ ...f, jobPrompt: job.prompt, sessionId: job.sessionId })))
     .sort((a, b) => b.at - a.at);
 
   if (allFindings.length) {
@@ -1045,11 +1106,64 @@ async function refreshJobs() {
         </div>
         ${f.label ? `<div class="finding-label" title="${escapeHtml(f.label)}">${f.kind}: ${escapeHtml(f.label)}</div>` : ''}
         ${f.detail ? `<div class="finding-detail">${escapeHtml(f.detail)}</div>` : ''}
+        ${f.sessionId ? `<button class="view-chat-link" data-view-chat="${f.sessionId}">View chat</button>` : ''}
       </div>`).join('');
+    securityFeed.querySelectorAll('[data-view-chat]').forEach((btn) => {
+      btn.addEventListener('click', () => openSession(Number(btn.dataset.viewChat)));
+    });
   } else {
     securityTabCount.hidden = true;
     securityFeed.innerHTML = '<div class="empty-mini">No findings yet.</div>';
   }
+}
+
+// Past runs, sourced from what's already persisted on each assistant message
+// (see db.js listAgentHistory) — survives well past jobs.js's 20s in-memory
+// window, so this is what's left once a run scrolls out of "recent".
+async function refreshAgentHistory() {
+  try {
+    state.agentHistory = await getJSON('/api/agent-history?limit=30');
+  } catch {
+    return; // Best-effort — the live feed above still works without this.
+  }
+
+  agentsHistoryFeed.innerHTML = state.agentHistory.length
+    ? state.agentHistory.map((h, i) => `
+      <div class="task-card history" data-view-chat="${h.sessionId}">
+        <div class="task-avatar ${h.backend}">${icon(iconForTask(h.prompt ?? ''), 16)}</div>
+        <div class="task-body">
+          <div class="task-title-row"><span class="task-title">${escapeHtml((h.prompt ?? h.sessionTitle ?? 'Untitled chat').slice(0, 60))}</span></div>
+          <div class="task-desc">${badge(h.backend)} ${h.timeline.length} step${h.timeline.length === 1 ? '' : 's'}${h.projectName ? ` · 📁 ${escapeHtml(h.projectName)}` : ''}</div>
+          <div class="task-meta-row">
+            <span>${fmtRelative(h.createdAt)}</span>
+            <button class="view-chat-link" data-breakdown="${i}">Token breakdown</button>
+          </div>
+        </div>
+      </div>`).join('')
+    : '<div class="empty-mini">Nothing yet.</div>';
+  agentsHistoryFeed.querySelectorAll('[data-view-chat]').forEach((card) => {
+    card.addEventListener('click', () => openSession(Number(card.dataset.viewChat)));
+  });
+  agentsHistoryFeed.querySelectorAll('[data-breakdown]').forEach((btn) => {
+    btn.addEventListener('click', (e) => { e.stopPropagation(); openTokenBreakdown(state.agentHistory[Number(btn.dataset.breakdown)]); });
+  });
+
+  const historyFindings = state.agentHistory
+    .flatMap((h) => h.securityFindings.map((f) => ({ ...f, sessionId: h.sessionId })));
+
+  securityHistoryFeed.innerHTML = historyFindings.length
+    ? historyFindings.map((f) => `
+      <div class="finding-card ${f.severity}" data-view-chat="${f.sessionId}" style="cursor:pointer;">
+        <div class="finding-head">
+          <span class="finding-sev ${f.severity}">${f.severity}</span>
+          <span class="finding-title">${escapeHtml(f.title)}</span>
+        </div>
+        ${f.detail ? `<div class="finding-detail">${escapeHtml(f.detail)}</div>` : ''}
+      </div>`).join('')
+    : '<div class="empty-mini">Nothing yet.</div>';
+  securityHistoryFeed.querySelectorAll('[data-view-chat]').forEach((card) => {
+    card.addEventListener('click', () => openSession(Number(card.dataset.viewChat)));
+  });
 }
 
 // The drill-down view (opened by tapping a task card) — a real step-by-step
@@ -1076,6 +1190,7 @@ function openAgentDetail(jobId) {
           </div>
           ${step.subtitle ? `<div class="timeline-subtitle">${escapeHtml(step.subtitle)}</div>` : ''}
           ${step.detail ? `<div class="timeline-detail">${escapeHtml(step.detail.slice(0, 1500))}</div>` : ''}
+          ${step.usage ? `<div class="timeline-subtitle">${fmtTokens(usageTotal(step.usage))} tok</div>` : ''}
         </div>
       </div>`).join('')
     : '<div class="empty-mini">No tool calls recorded (a plain text answer with no file/command activity).</div>';
@@ -1114,12 +1229,66 @@ function openAgentDetail(jobId) {
   openModal(job.prompt.slice(0, 70), headerHtml + stepsHtml + subagentsHtml + findingsHtml);
 }
 
+// Sums whatever numeric fields a usage object actually has (input/output/
+// cache tokens — the exact set differs between Claude and Codex) without
+// recursing into a nested object like Claude's `cache_creation` breakdown,
+// which would double-count tokens already counted at the top level.
+function usageTotal(usage) {
+  if (!usage) return 0;
+  return Object.values(usage).filter((v) => typeof v === 'number').reduce((a, b) => a + b, 0);
+}
+
+// Real, per-category token spend for one past run — grouped by step title
+// (the closest thing to "what area" without inventing a taxonomy). The
+// server folds whatever usage never attached to a tool call (almost always
+// the final answer itself, which has no tool_use) into its own "Model
+// reasoning / final answer" step before persisting, so this sum is already
+// the complete total — no separate remainder math needed. Flags a category
+// only when the numbers themselves show it dominated — never a guess.
+function openTokenBreakdown(h) {
+  const groups = new Map();
+  for (const step of h.timeline) {
+    if (!step.usage) continue;
+    const key = step.title;
+    groups.set(key, (groups.get(key) ?? 0) + usageTotal(step.usage));
+  }
+  const total = [...groups.values()].reduce((a, b) => a + b, 0);
+  const rows = [...groups.entries()].sort((a, b) => b[1] - a[1]);
+
+  const rowsHtml = rows.length
+    ? rows.map(([label, tokens]) => {
+        const pct = total ? Math.round((tokens / total) * 100) : 0;
+        return `
+        <div style="margin-bottom:10px;">
+          <div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;">
+            <span>${escapeHtml(label)}</span>
+            <span style="color:var(--muted);">${fmtTokens(tokens)} tok · ${pct}%</span>
+          </div>
+          <div class="task-progress-track"><div class="task-progress-fill completed" style="width:${pct}%; background:${pct >= 50 ? 'var(--status-critical)' : 'var(--series-local)'};"></div></div>
+        </div>`;
+      }).join('')
+    : '<div class="empty-mini">No per-step usage recorded for this run.</div>';
+
+  const dominant = rows[0];
+  const warning = dominant && total && dominant[1] / total >= 0.5
+    ? `<div class="empty-mini" style="margin-bottom:12px; color:var(--status-critical);">⚠ "${escapeHtml(dominant[0])}" alone used ${Math.round((dominant[1] / total) * 100)}% of this run's tokens.</div>`
+    : '';
+
+  openModal(
+    `Token breakdown`,
+    `<div class="task-meta-row" style="margin-bottom:6px;">${badge(h.backend)} <span style="color:var(--muted);">${fmtTokens(total)} tok processed${h.costUsd ? ` · ${fmtMoney(h.costUsd)} billed` : ''}</span></div>
+     <div class="empty-mini" style="margin-bottom:14px;">This counts every turn's input, output, and cache read/write — much larger than the ${fmtTokens((h.tokensIn ?? 0) + (h.tokensOut ?? 0))} tok shown on the chat message itself, which is only the final response's own request/reply size. Cached context is typically billed far below full price.</div>
+     ${warning}${rowsHtml}`
+  );
+}
+
 const sidebarTabs = document.querySelectorAll('.sidebar-tabs button');
 function switchSidebarTab(tab) {
   sidebarTabs.forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
   document.getElementById('insightsTab').hidden = tab !== 'insights';
   document.getElementById('agentsTab').hidden = tab !== 'agents';
   document.getElementById('securityTab').hidden = tab !== 'security';
+  if (tab === 'agents' || tab === 'security') refreshAgentHistory();
 }
 sidebarTabs.forEach((btn) => btn.addEventListener('click', () => switchSidebarTab(btn.dataset.tab)));
 agentBanner.addEventListener('click', () => {

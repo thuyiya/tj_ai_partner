@@ -170,6 +170,25 @@ body {
 }
 .icon-btn.small { width: 20px; height: 20px; font-size: 12px; border-radius: 5px; }
 
+.library-footer { padding: 8px 10px 12px; border-top: 1px solid var(--border); flex-shrink: 0; }
+.account-btn {
+  width: 100%; display: flex; align-items: center; gap: 9px;
+  padding: 7px 8px; border-radius: 9px; border: 1px solid transparent;
+  background: none; color: var(--text-primary); font: inherit; font-size: 12.5px; cursor: pointer;
+}
+.account-btn:hover { background: var(--surface-2); border-color: var(--border); }
+.account-avatar {
+  width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0; position: relative;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface-2); color: var(--text-secondary);
+}
+.account-btn.needs-attention .account-avatar::after {
+  content: ''; position: absolute; top: -1px; right: -1px;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--status-critical); border: 2px solid var(--page);
+}
+.account-label { font-weight: 600; }
+
 .project-row {
   width: 100%;
   display: flex;
@@ -340,6 +359,7 @@ body {
 .badge.claude .bdot { background: var(--series-claude); }
 .badge.codex .bdot { background: var(--series-codex); }
 .badge.image .bdot { background: var(--muted); }
+.badge.unknown .bdot { background: var(--muted); }
 .badge.error { color: var(--status-critical); border-color: var(--status-critical); }
 
 .thumbs { display: flex; gap: 6px; margin-bottom: 6px; }
@@ -1006,6 +1026,13 @@ svg text { fill: var(--text-secondary); font-size: 10px; }
 .task-status-dot.completed { background: var(--muted); }
 .task-status-dot.failed { background: var(--status-critical); }
 .task-progress-track { flex: 1; height: 4px; border-radius: 2px; background: var(--gridline); overflow: hidden; max-width: 100px; }
+.view-chat-link {
+  margin-left: auto; padding: 2px 8px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--surface-1);
+  color: var(--series-local); font-size: 10px; font-weight: 600; cursor: pointer;
+}
+.view-chat-link:hover { background: var(--surface-2); }
+.finding-card .view-chat-link { margin-top: 8px; display: inline-block; }
 .task-progress-fill { height: 100%; border-radius: 2px; }
 .task-progress-fill.running { background: repeating-linear-gradient(90deg, var(--series-local) 0 10px, transparent 10px 20px); background-size: 200% 100%; animation: barberpole 1s linear infinite; width: 100%; }
 .task-progress-fill.completed { background: var(--status-good); width: 100%; }

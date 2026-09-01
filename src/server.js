@@ -14,6 +14,7 @@ import { listModels, deleteModel, DEFAULT_MODEL } from './backends/ollama.js';
 import { startPull, pullStatus, cancelPull } from './backends/modelPull.js';
 import { maybeUpload, uploadAsset } from './uploads.js';
 import { listSources, saveSource, deleteSource, getSkill, saveSkill } from './projectAssets.js';
+import { scanTree, readProjectFile, analyzeProject, loadCachedOverview, loadOverviewHtml } from './projectAnalysis.js';
 import { listJobs, getJob } from './jobs.js';
 import { attachmentsDir, persistAttachment } from './attachments.js';
 import { connectors, listConnectorStatus } from './connectors/index.js';
@@ -199,6 +200,57 @@ export function createApp() {
     if (!project) return res.status(404).json({ error: 'project not found' });
     saveSkill(project, req.body?.content ?? '');
     res.json({ saved: true });
+  });
+
+  // ---------- project codebase explorer + AI-generated overview ----------
+  // All local/free — see projectAnalysis.js. Nothing here ever calls
+  // Claude/Codex, so opening or re-scanning a project costs nothing.
+
+  app.get('/api/projects/:id/tree', (req, res) => {
+    const project = getProject(Number(req.params.id));
+    if (!project) return res.status(404).json({ error: 'project not found' });
+    try {
+      res.json(scanTree(project.path));
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get('/api/projects/:id/file', (req, res) => {
+    const project = getProject(Number(req.params.id));
+    if (!project) return res.status(404).json({ error: 'project not found' });
+    const relPath = req.query.path;
+    if (!relPath) return res.status(400).json({ error: 'path is required' });
+    try {
+      res.json(readProjectFile(project, relPath));
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.get('/api/projects/:id/overview', (req, res) => {
+    const project = getProject(Number(req.params.id));
+    if (!project) return res.status(404).json({ error: 'project not found' });
+    const cached = loadCachedOverview(project);
+    res.json(cached ?? { cached: false });
+  });
+
+  app.get('/api/projects/:id/overview.html', (req, res) => {
+    const project = getProject(Number(req.params.id));
+    if (!project) return res.status(404).send('Project not found');
+    const html = loadOverviewHtml(project);
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    res.send(html ?? '<p style="font-family:sans-serif;padding:24px;">No overview generated yet — click "Analyze project" first.</p>');
+  });
+
+  app.post('/api/projects/:id/analyze', async (req, res) => {
+    const project = getProject(Number(req.params.id));
+    if (!project) return res.status(404).json({ error: 'project not found' });
+    try {
+      res.json(await analyzeProject(project));
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
   });
 
   // ---------- connectors (plugins) ----------

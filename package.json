@@ -4,6 +4,8 @@
   "description": "Desktop app that routes each chat message between a local Ollama model and Claude Code (Max plan), with projects, chat history, and connector plugins.",
   "type": "module",
   "private": true,
+  "license": "MIT",
+  "author": "thuyiya",
   "main": "electron/main.js",
   "scripts": {
     "start": "node --no-warnings src/server.js",
@@ -35,7 +37,8 @@
     "icon": "build/icon.icns",
     "asar": false,
     "mac": {
-      "category": "public.app-category.developer-tools"
+      "category": "public.app-category.developer-tools",
+      "identity": null
     },
     "directories": {
       "output": "dist"

@@ -589,21 +589,47 @@ async function deleteProject(id) {
   else renderProjects();
 }
 
-// ---------- project detail (sources + skill) ----------
-// Everything shown here is a real file in the project's own folder
-// (<path>/.ai-with-tj/) — this view just reflects what's actually on disk,
-// not a hidden app-managed store.
+// ---------- project detail (sources + skill / codebase / overview) ----------
+// Sources+skill are real files in the project's own folder (<path>/.ai-with-tj/)
+// — this view just reflects what's actually on disk, not a hidden app-managed
+// store. Codebase + Overview are new: a live file browser over that same real
+// folder, and an AI-generated ("local model only, never Claude/Codex, so it's
+// free") one-page report — see projectAnalysis.js.
 
-async function openProjectDetail(id) {
+const PROJ_TABS = [
+  { key: 'sources', label: 'Sources & Skill' },
+  { key: 'codebase', label: 'Codebase' },
+  { key: 'overview', label: 'Overview' }
+];
+
+async function openProjectDetail(id, tab = 'sources') {
   const project = state.projects.find((p) => p.id === id);
   if (!project) return;
 
+  const shell = `
+    <div class="proj-tabs">${PROJ_TABS.map((t) => `<button class="proj-tab ${t.key === tab ? 'active' : ''}" data-proj-tab="${t.key}">${t.label}</button>`).join('')}</div>
+    <div id="projTabBody"></div>
+  `;
+  openModal(`📁 ${project.name}`, shell, { wide: tab !== 'sources' });
+
+  modalBody.querySelectorAll('[data-proj-tab]').forEach((btn) => {
+    btn.addEventListener('click', () => openProjectDetail(id, btn.dataset.projTab));
+  });
+
+  const tabBody = document.getElementById('projTabBody');
+  if (tab === 'codebase') await renderCodebaseTab(project, tabBody);
+  else if (tab === 'overview') await renderOverviewTab(project, tabBody);
+  else await renderSourcesTab(project, tabBody);
+}
+
+async function renderSourcesTab(project, container) {
+  const id = project.id;
   const [sources, skill] = await Promise.all([
     getJSON(`/api/projects/${id}/sources`),
     getJSON(`/api/projects/${id}/skill`)
   ]);
 
-  const body = `
+  container.innerHTML = `
     <div class="empty-mini" style="margin-bottom:12px;">Stored in <code>${escapeHtml(project.path)}/.ai-with-tj/</code> — visible in Finder, and readable by Claude/Codex when this project grants file access. Text sources and the skill are also injected as context for every backend, including local models with no file access.</div>
 
     <div class="field-label" style="margin-top:0;">Skill (project instructions)</div>
@@ -623,8 +649,6 @@ async function openProjectDetail(id) {
     </div>
   `;
 
-  openModal(`📁 ${project.name}`, body);
-
   document.getElementById('saveSkillBtn').addEventListener('click', async () => {
     await fetch(`/api/projects/${id}/skill`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -639,14 +663,125 @@ async function openProjectDetail(id) {
     const form = new FormData();
     form.append('file', fileInput.files[0]);
     await fetch(`/api/projects/${id}/sources`, { method: 'POST', body: form });
-    openProjectDetail(id); // re-render with the new file
+    openProjectDetail(id, 'sources'); // re-render with the new file
   });
 
-  modalBody.querySelectorAll('[data-source-del]').forEach((btn) => {
+  container.querySelectorAll('[data-source-del]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       await fetch(`/api/projects/${id}/sources/${encodeURIComponent(btn.dataset.sourceDel)}`, { method: 'DELETE' });
-      openProjectDetail(id);
+      openProjectDetail(id, 'sources');
     });
+  });
+}
+
+// ---------- codebase tab: real file tree over the project's own folder ----------
+
+function renderTreeNodes(nodes, parentPath = '') {
+  return nodes.map((node) => {
+    const fullPath = parentPath ? `${parentPath}/${node.name}` : node.name;
+    if (node.type === 'dir') {
+      return `
+        <div class="tree-dir">
+          <div class="tree-label" data-toggle-dir>${icon('folder', 12)} ${escapeHtml(node.name)}</div>
+          <div class="tree-children collapsed">${renderTreeNodes(node.children, fullPath)}</div>
+        </div>`;
+    }
+    return `<div class="tree-file" data-file-path="${escapeHtml(fullPath)}" title="${escapeHtml(fullPath)}">${escapeHtml(node.name)}</div>`;
+  }).join('');
+}
+
+async function renderCodebaseTab(project, container) {
+  container.innerHTML = '<div class="empty-mini">Scanning project folder…</div>';
+  let data;
+  try {
+    data = await getJSON(`/api/projects/${project.id}/tree`);
+  } catch (err) {
+    container.innerHTML = `<div class="empty-mini">Could not read this project's folder: ${escapeHtml(err.message)}</div>`;
+    return;
+  }
+
+  container.innerHTML = `
+    ${data.truncated ? `<div class="empty-mini" style="margin-bottom:8px;">This project is large — showing the first ${data.entryCount} entries.</div>` : ''}
+    <div class="codebase-pane">
+      <div class="file-tree">${data.tree.length ? renderTreeNodes(data.tree) : '<div class="empty-mini">Empty folder.</div>'}</div>
+      <div class="file-viewer">
+        <div class="file-viewer-header">
+          <span class="file-viewer-path" id="fileViewerPath">Select a file to view it</span>
+          <button id="askAboutFileBtn" hidden>Ask AI to improve this</button>
+        </div>
+        <pre id="fileViewerContent"></pre>
+      </div>
+    </div>
+  `;
+
+  container.querySelectorAll('[data-toggle-dir]').forEach((label) => {
+    label.addEventListener('click', () => label.nextElementSibling.classList.toggle('collapsed'));
+  });
+
+  const pathEl = document.getElementById('fileViewerPath');
+  const contentEl = document.getElementById('fileViewerContent');
+  const askBtn = document.getElementById('askAboutFileBtn');
+  let selectedFile = null;
+
+  container.querySelectorAll('[data-file-path]').forEach((el) => {
+    el.addEventListener('click', async () => {
+      container.querySelectorAll('.tree-file.active').forEach((n) => n.classList.remove('active'));
+      el.classList.add('active');
+      const relPath = el.dataset.filePath;
+      pathEl.textContent = relPath;
+      contentEl.textContent = 'Loading…';
+      askBtn.hidden = true;
+      try {
+        const file = await getJSON(`/api/projects/${project.id}/file?path=${encodeURIComponent(relPath)}`);
+        if (file.binary) {
+          contentEl.textContent = `Binary file (${fmtBytes(file.sizeBytes)}) — not shown.`;
+        } else {
+          contentEl.textContent = file.content + (file.truncated ? '\n\n… (truncated, file is larger)' : '');
+          selectedFile = file;
+          askBtn.hidden = false;
+        }
+      } catch (err) {
+        contentEl.textContent = `Could not read file: ${err.message}`;
+      }
+    });
+  });
+
+  askBtn.addEventListener('click', () => {
+    if (!selectedFile) return;
+    selectProject(project.id);
+    const snippet = selectedFile.content.slice(0, 6000);
+    promptEl.value = `Regarding \`${selectedFile.path}\` in this project:\n\n\`\`\`\n${snippet}${selectedFile.content.length > 6000 ? '\n… (truncated)' : ''}\n\`\`\`\n\nHow could this be improved?`;
+    closeModal();
+    promptEl.focus();
+  });
+}
+
+// ---------- overview tab: AI-generated project report (local model, free) ----------
+
+async function renderOverviewTab(project, container) {
+  const cached = await getJSON(`/api/projects/${project.id}/overview`);
+  const hasReport = cached && cached.cached !== false;
+
+  container.innerHTML = `
+    <div class="overview-pane">
+      <div class="overview-toolbar">
+        <span class="meta">${hasReport ? `Generated ${fmtRelative(cached.generatedAt)}, from ${cached.stats.totalFiles} files.` : 'No report yet — a local model (never Claude/Codex, so this is free) reads the project structure and writes one.'}</span>
+        <button id="analyzeProjectBtn">${hasReport ? 'Re-analyze' : 'Analyze project'}</button>
+      </div>
+      ${hasReport ? `<iframe class="overview-frame" id="overviewFrame" src="/api/projects/${project.id}/overview.html"></iframe>` : '<div class="empty-mini">Click "Analyze project" to generate a purpose / tech stack / architecture / database-schema report for this codebase.</div>'}
+    </div>
+  `;
+
+  document.getElementById('analyzeProjectBtn').addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    e.target.textContent = 'Analyzing… (can take a minute)';
+    try {
+      await getJSON(`/api/projects/${project.id}/analyze`, { method: 'POST' });
+      await renderOverviewTab(project, container);
+    } catch (err) {
+      e.target.disabled = false;
+      alert(`Analysis failed: ${err.message}`);
+    }
   });
 }
 
@@ -1206,12 +1341,14 @@ const modalTitle = document.getElementById('modalTitle');
 const modalBody = document.getElementById('modalBody');
 const modalBackBtn = document.getElementById('modalBackBtn');
 const modalCloseBtn = document.getElementById('modalCloseBtn');
+const modalPanel = document.querySelector('.modal-panel');
 
-function openModal(title, bodyHtml, { onBack } = {}) {
+function openModal(title, bodyHtml, { onBack, wide } = {}) {
   modalTitle.textContent = title;
   modalBody.innerHTML = bodyHtml;
   modalBackBtn.hidden = !onBack;
   modalBackBtn.onclick = onBack ?? null;
+  modalPanel?.classList.toggle('wide', Boolean(wide));
   modalOverlay.hidden = false;
   if (modalBody.querySelector('.mermaid') && window.mermaid) {
     window.mermaid.run({ nodes: modalBody.querySelectorAll('.mermaid') }).catch(() => {
@@ -1222,6 +1359,7 @@ function openModal(title, bodyHtml, { onBack } = {}) {
 function closeModal() {
   modalOverlay.hidden = true;
   modalBody.innerHTML = '';
+  modalPanel?.classList.remove('wide');
 }
 modalCloseBtn.addEventListener('click', closeModal);
 modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });

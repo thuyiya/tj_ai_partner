@@ -927,6 +927,32 @@ svg text { fill: var(--text-secondary); font-size: 10px; }
 .modal-body { padding: 18px 20px; overflow-y: auto; font-size: 13px; }
 .modal-body .mermaid { background: var(--surface-2); border-radius: 10px; padding: 12px; }
 
+.modal-panel.wide { width: min(1080px, 94vw); max-height: 88vh; }
+
+/* ---------- project detail tabs / codebase explorer / overview ---------- */
+
+.proj-tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+.proj-tab { padding: 8px 14px; font-size: 12.5px; font-weight: 600; color: var(--text-secondary); background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; }
+.proj-tab.active { color: var(--text-primary); border-bottom-color: var(--series-local); }
+
+.codebase-pane { display: flex; gap: 14px; height: 56vh; }
+.file-tree { width: 240px; flex-shrink: 0; overflow-y: auto; font-size: 12.5px; border: 1px solid var(--border); border-radius: 8px; padding: 8px; background: var(--surface-2); }
+.tree-dir > .tree-label { font-weight: 600; cursor: pointer; padding: 3px 4px; border-radius: 5px; }
+.tree-dir > .tree-label:hover { background: var(--surface-1); }
+.tree-children { margin-left: 12px; }
+.tree-children.collapsed { display: none; }
+.tree-file { padding: 3px 4px; border-radius: 5px; cursor: pointer; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tree-file:hover, .tree-file.active { background: var(--surface-1); color: var(--text-primary); }
+.file-viewer { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.file-viewer-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.file-viewer-path { flex: 1; font-family: monospace; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-viewer pre { flex: 1; overflow: auto; margin: 0; padding: 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; font-size: 11.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+
+.overview-pane { display: flex; flex-direction: column; height: 60vh; }
+.overview-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.overview-toolbar .meta { color: var(--text-secondary); font-size: 12px; flex: 1; }
+.overview-frame { flex: 1; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+
 .viz-modal-summary { font-size: 14px; color: var(--text-primary); margin-bottom: 14px; line-height: 1.5; }
 .viz-modal-points { margin: 0 0 14px; padding-left: 20px; }
 .viz-modal-points li { color: var(--text-secondary); margin-bottom: 5px; line-height: 1.4; }

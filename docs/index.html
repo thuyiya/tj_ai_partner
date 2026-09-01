@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TJ AI Partner — Run AI Locally, Cut Your Claude & ChatGPT Bill</title>
+<meta name="description" content="A free, open-source desktop app that runs AI locally on your Mac first, and only calls Claude or ChatGPT when a task truly needs it. Highly secure, private by design, and built to save money for people on a small budget." />
+<meta name="keywords" content="run AI locally, local AI model, private AI assistant, secure AI, low budget AI, save money on AI subscription, Claude alternative, ChatGPT alternative, local LLM app, Ollama desktop app, offline AI assistant, AI cost optimization" />
+<link rel="canonical" href="https://thuyiya.github.io/tj_ai_partner/" />
+<meta name="robots" content="index, follow" />
+<link rel="icon" href="icon.png" type="image/png" />
+
+<!-- Open Graph -->
+<meta property="og:type" content="website" />
+<meta property="og:title" content="TJ AI Partner — Run AI Locally, Cut Your Claude & ChatGPT Bill" />
+<meta property="og:description" content="Local-first AI desktop app: free local models handle what they can, Claude/Codex only step in when genuinely needed. Private, secure, and built to save money." />
+<meta property="og:url" content="https://thuyiya.github.io/tj_ai_partner/" />
+<meta property="og:image" content="https://thuyiya.github.io/tj_ai_partner/icon.png" />
+
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:title" content="TJ AI Partner — Run AI Locally, Cut Your Claude & ChatGPT Bill" />
+<meta name="twitter:description" content="Local-first AI desktop app for Mac: free local models handle what they can, Claude/Codex only when needed. Private, secure, low-budget friendly." />
+<meta name="twitter:image" content="https://thuyiya.github.io/tj_ai_partner/icon.png" />
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "TJ AI Partner",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "macOS",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "description": "A free, open-source desktop app that routes each AI request between local models and Claude/OpenAI Codex, minimizing cost while keeping data private and local-first.",
+  "url": "https://thuyiya.github.io/tj_ai_partner/",
+  "downloadUrl": "https://github.com/thuyiya/tj_ai_partner",
+  "softwareVersion": "1.0.0"
+}
+</script>
+
+<style>
+:root{
+  color-scheme: light;
+  --page:#f9f9f7; --surface:#fff; --surface-2:#f2f1ee;
+  --text:#0b0b0b; --text-2:#52514e; --muted:#898781;
+  --border:rgba(11,11,11,.1); --accent:#2a78d6; --accent-2:#eb6834; --good:#0ca30c;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    color-scheme: dark;
+    --page:#0b0b0c; --surface:#161617; --surface-2:#1e1e20;
+    --text:#f2f2f0; --text-2:#b3b1a8; --muted:#7c7a73;
+    --border:rgba(255,255,255,.08); --accent:#3987e5; --accent-2:#e6733a; --good:#26c96b;
+  }
+}
+* { box-sizing:border-box; }
+body{
+  margin:0; background:var(--page); color:var(--text);
+  font-family: system-ui,-apple-system,"Segoe UI",sans-serif; line-height:1.55;
+}
+a{ color:var(--accent); }
+.wrap{ max-width:960px; margin:0 auto; padding:0 24px; }
+header.hero{ padding:80px 0 60px; text-align:center; }
+.logo{ width:72px; height:72px; border-radius:16px; margin-bottom:24px; }
+h1{ font-size:clamp(28px,5vw,44px); margin:0 0 16px; letter-spacing:-0.02em; }
+.tagline{ font-size:19px; color:var(--text-2); max-width:640px; margin:0 auto 32px; }
+.cta-row{ display:flex; gap:12px; justify-content:center; flex-wrap:wrap; }
+.btn{ display:inline-flex; align-items:center; gap:8px; padding:12px 22px; border-radius:10px; font-weight:600; font-size:15px; text-decoration:none; border:1px solid var(--border); }
+.btn.primary{ background:var(--text); color:var(--page); border-color:var(--text); }
+.btn.secondary{ background:var(--surface); color:var(--text); }
+
+.badges{ display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-top:20px; font-size:12.5px; color:var(--muted); }
+.badge{ background:var(--surface-2); border:1px solid var(--border); border-radius:999px; padding:4px 12px; }
+
+section{ padding:48px 0; border-top:1px solid var(--border); }
+h2{ font-size:26px; margin:0 0 12px; letter-spacing:-0.01em; }
+.section-sub{ color:var(--text-2); max-width:640px; margin:0 0 32px; }
+
+.grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:20px; }
+.card{ background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:22px; }
+.card h3{ font-size:16.5px; margin:0 0 8px; display:flex; align-items:center; gap:8px; }
+.card p{ font-size:14px; color:var(--text-2); margin:0; }
+.dot{ width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+.dot.blue{ background:var(--accent); } .dot.orange{ background:var(--accent-2); } .dot.green{ background:var(--good); }
+
+.steps{ counter-reset:step; display:grid; gap:18px; }
+.step{ display:flex; gap:16px; align-items:flex-start; }
+.step::before{ counter-increment:step; content:counter(step); flex-shrink:0; width:30px; height:30px; border-radius:50%; background:var(--surface-2); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; }
+.step-body h3{ margin:0 0 4px; font-size:15.5px; } .step-body p{ margin:0; color:var(--text-2); font-size:14px; }
+
+.compare{ width:100%; border-collapse:collapse; font-size:14px; }
+.compare th,.compare td{ text-align:left; padding:10px 12px; border-bottom:1px solid var(--border); }
+.compare th{ color:var(--muted); font-weight:600; font-size:12.5px; text-transform:uppercase; letter-spacing:.03em; }
+.compare td.yes{ color:var(--good); font-weight:600; }
+.compare td.no{ color:var(--muted); }
+
+details{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 18px; margin-bottom:10px; }
+summary{ cursor:pointer; font-weight:600; font-size:15px; }
+details p{ color:var(--text-2); font-size:14px; margin:10px 0 0; }
+
+footer{ padding:40px 0 60px; text-align:center; color:var(--muted); font-size:13px; }
+footer a{ color:var(--text-2); }
+code{ background:var(--surface-2); padding:2px 6px; border-radius:5px; font-size:.9em; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="hero">
+    <h1>Run AI locally. Only pay when it actually matters.</h1>
+    <p class="tagline">TJ AI Partner is a free, open-source desktop app that answers what it can with a private local model on your own Mac, and only calls Claude or ChatGPT when a task genuinely needs their reasoning — using your existing subscriptions, no separate API bill required.</p>
+    <div class="cta-row">
+      <a class="btn primary" href="https://github.com/thuyiya/tj_ai_partner">View on GitHub</a>
+      <a class="btn secondary" href="https://github.com/thuyiya/tj_ai_partner/releases">Download for macOS</a>
+    </div>
+    <div class="badges">
+      <span class="badge">100% local-first</span>
+      <span class="badge">Open source</span>
+      <span class="badge">No API key required</span>
+      <span class="badge">macOS (Apple Silicon)</span>
+      <span class="badge">Free</span>
+    </div>
+  </header>
+
+  <section id="why">
+    <h2>Built for anyone on a real budget who still wants serious AI</h2>
+    <p class="section-sub">If you're paying for a Claude or ChatGPT plan already, most day-to-day questions don't need it — a small model running on your own machine can summarize, translate, format, or answer a quick question in seconds, for free, with nothing leaving your computer. Save your subscription's usage for the moments that actually need deep reasoning.</p>
+    <div class="grid">
+      <div class="card"><h3><span class="dot blue"></span>Highly secure by design</h3><p>Local chats never leave your Mac. API keys, when you add them, are stored in macOS Keychain — never in a database or a log file. Every file-access permission is opt-in and scoped per project.</p></div>
+      <div class="card"><h3><span class="dot orange"></span>Save real money</h3><p>An AI-driven router reads every message and decides whether a free local model can handle it before ever touching a paid or subscription-metered call. You see exactly how many tokens each model used, and why.</p></div>
+      <div class="card"><h3><span class="dot green"></span>Use the AI partners you already pay for</h3><p>Works with your existing Claude (Max plan) and Codex (ChatGPT) logins — no separate API key needed to get started. Add a pay-as-you-go API key later only if you want to.</p></div>
+      <div class="card"><h3><span class="dot blue"></span>Real local models, not a toy</h3><p>Powered by Ollama — pull any open model (Llama, Qwen, DeepSeek, and more) and switch between them anytime, right from the app.</p></div>
+      <div class="card"><h3><span class="dot orange"></span>Projects with real context</h3><p>Point a project at a real folder, upload reference files, and give it custom instructions — every model, including fully offline local ones, can use them.</p></div>
+      <div class="card"><h3><span class="dot green"></span>Local image generation</h3><p>Generate images entirely on-device via Draw Things — no cloud image API, no extra cost.</p></div>
+    </div>
+  </section>
+
+  <section id="how">
+    <h2>How the routing actually works</h2>
+    <p class="section-sub">No hard-coded keyword list decides this — a small local model reads each message first and makes the call, same as a human triaging a support queue.</p>
+    <div class="steps">
+      <div class="step"><div class="step-body"><h3>1. A local model reads your message first</h3><p>An already-running, free local model classifies intent: is this simple enough to answer locally, or does it need deeper reasoning, real file edits, or multi-step work?</p></div></div>
+      <div class="step"><div class="step-body"><h3>2. Simple tasks stay local — free, private, instant</h3><p>Summaries, quick facts, formatting, short creative writing, casual conversation — handled entirely on your machine, and it even picks the best-suited installed model for the job.</p></div></div>
+      <div class="step"><div class="step-body"><h3>3. Genuinely hard tasks escalate — using what you already pay for</h3><p>Complex reasoning, architecture design, or real multi-file coding gets routed to Claude or Codex, using your existing login — not a new, separately-billed API key.</p></div></div>
+      <div class="step"><div class="step-body"><h3>4. You always see why</h3><p>Every decision is logged with plain-language reasoning, token counts, and cost — a live dashboard, not a black box.</p></div></div>
+    </div>
+  </section>
+
+  <section id="compare">
+    <h2>Where it fits</h2>
+    <table class="compare">
+      <thead><tr><th>&nbsp;</th><th>Claude / ChatGPT web</th><th>Raw API integration</th><th>TJ AI Partner</th></tr></thead>
+      <tbody>
+        <tr><td>Free for simple tasks</td><td class="no">No</td><td class="no">No — billed per token</td><td class="yes">Yes — local model</td></tr>
+        <tr><td>Uses your existing subscription</td><td class="yes">Yes</td><td class="no">No, separate billing</td><td class="yes">Yes</td></tr>
+        <tr><td>Fully private option</td><td class="no">No</td><td class="no">No</td><td class="yes">Yes — local-only mode</td></tr>
+        <tr><td>Real local file access</td><td class="no">No</td><td class="no">Custom build required</td><td class="yes">Yes, permission-scoped</td></tr>
+        <tr><td>Multiple AI providers, one app</td><td class="no">No</td><td class="no">Custom build required</td><td class="yes">Claude + Codex + local</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="faq">
+    <h2>Frequently asked questions</h2>
+    <details><summary>Is TJ AI Partner really free?</summary><p>Yes — the app itself is free and open source. Local models are always free to run. Claude and Codex usage relies on your existing subscription (Max plan / ChatGPT), so you're not paying anything extra beyond what you already pay for those.</p></details>
+    <details><summary>Do I need an Anthropic or OpenAI API key to use this?</summary><p>No. The app can use your existing <code>claude</code> and <code>codex</code> CLI logins with zero extra setup. Adding a pay-as-you-go API key is entirely optional, for people who want per-token billing instead of a subscription.</p></details>
+    <details><summary>How is this more secure than using Claude or ChatGPT directly?</summary><p>Anything a local model can answer never leaves your Mac. When you do add an API key, it's stored in macOS Keychain — the same secure store macOS itself uses — never in a plain file or database. Every project's file access is off by default and scoped to exactly the folder you choose.</p></details>
+    <details><summary>What local models does it support?</summary><p>Any model available through <a href="https://ollama.com">Ollama</a> — Llama, Qwen, DeepSeek, Gemma, and more. Pull, switch, or delete models directly from the app.</p></details>
+    <details><summary>Does it work on Windows or Linux?</summary><p>Not yet — it's built and tested for macOS on Apple Silicon.</p></details>
+    <details><summary>Is my data used to train anything?</summary><p>No. Local requests stay on your machine entirely. Requests sent to Claude or Codex follow whatever data-use terms your existing Anthropic/OpenAI account already has — this app doesn't add any additional data collection of its own.</p></details>
+  </section>
+
+  <footer>
+    <p>Open source on <a href="https://github.com/thuyiya/tj_ai_partner">GitHub</a> — issues and contributions welcome.</p>
+    <p>TJ AI Partner is an independent project and is not affiliated with Anthropic, OpenAI, or Ollama.</p>
+  </footer>
+</div>
+</body>
+</html>

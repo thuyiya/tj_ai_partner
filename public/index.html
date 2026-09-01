@@ -67,15 +67,15 @@
           <div class="attachment-row" id="attachmentRow"></div>
           <textarea id="prompt" rows="1" placeholder="Message TJ AI Partner…"></textarea>
           <div class="composer-controls">
-            <div class="popover-wrap">
-              <button class="route-pill" id="routePill" title="Change routing mode">Auto-route ▾</button>
-              <div class="popover route-popover" id="routePopover" hidden>
-                <button data-mode="auto">Auto-route</button>
-                <button data-mode="ollama">Force Local</button>
-                <button data-mode="claude">Force Claude</button>
-                <button data-mode="codex">Force Codex</button>
+            <div class="popover-wrap" id="projAccessWrap" hidden>
+              <button class="route-pill" id="projAccessPill" title="This project's file access"></button>
+              <div class="popover route-popover" id="projAccessPopover" hidden>
+                <button data-mode="plan">Plan (read-only)</button>
+                <button data-mode="edits">Edits</button>
+                <button data-mode="full">Full</button>
               </div>
             </div>
+            <button class="route-pill" id="routePill" title="Change routing mode">Auto-route</button>
             <div class="composer-actions">
               <input type="file" id="fileInput" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden />
               <div class="popover-wrap">
@@ -135,16 +135,6 @@
       </div>
 
       <div id="insightsTab" class="sidebar-tab-panel">
-      <div class="panel" id="projectPermPanel" hidden>
-        <div class="panel-title">This project's access</div>
-        <div class="segmented" id="projectPermSegmented">
-          <button data-mode="plan">Plan</button>
-          <button data-mode="edits">Edits</button>
-          <button data-mode="full">Full</button>
-        </div>
-        <div class="empty-mini" id="projectPermHint"></div>
-      </div>
-
       <div class="panel">
         <div class="panel-title">Agents running <span class="count-chip" id="jobCount">0</span></div>
         <div id="jobList"><div class="empty-mini">Idle — nothing running.</div></div>

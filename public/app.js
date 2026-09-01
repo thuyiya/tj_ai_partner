@@ -179,25 +179,15 @@ function renderContextChips() {
   });
 }
 
-const routePopover = document.getElementById('routePopover');
+const ROUTE_MODE_ORDER = ['auto', 'ollama', 'claude', 'codex'];
 function updateRoutePillLabel() {
   const labels = { auto: 'Auto-route', ollama: 'Force local', claude: 'Force Claude', codex: 'Force Codex' };
-  routePill.textContent = `${labels[state.routeMode]} ▾`;
-  routePopover.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.mode === state.routeMode));
+  routePill.textContent = labels[state.routeMode];
 }
-routePill.addEventListener('click', (e) => {
-  e.stopPropagation();
-  routePopover.hidden = !routePopover.hidden;
-});
-routePopover.querySelectorAll('button').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    state.routeMode = btn.dataset.mode;
-    routePopover.hidden = true;
-    syncSegmented();
-  });
-});
-document.addEventListener('click', (e) => {
-  if (!routePopover.hidden && !e.target.closest('.popover-wrap')) routePopover.hidden = true;
+routePill.addEventListener('click', () => {
+  state.routeMode = ROUTE_MODE_ORDER[(ROUTE_MODE_ORDER.indexOf(state.routeMode) + 1) % ROUTE_MODE_ORDER.length];
+  updateRoutePillLabel();
+  syncSegmented();
 });
 
 // ---------- GitHub connector popover ----------
@@ -499,11 +489,12 @@ function pollPullStatus() {
 const projectList = document.getElementById('projectList');
 const noProjectRow = document.getElementById('noProjectRow');
 const currentContextLabel = document.getElementById('currentContextLabel');
-const projectPermPanel = document.getElementById('projectPermPanel');
-const projectPermSegmented = document.getElementById('projectPermSegmented');
-const projectPermHint = document.getElementById('projectPermHint');
+const projAccessWrap = document.getElementById('projAccessWrap');
+const projAccessPill = document.getElementById('projAccessPill');
+const projAccessPopover = document.getElementById('projAccessPopover');
 const addProjectBtn = document.getElementById('addProjectBtn');
 
+const PERM_LABELS = { plan: 'Plan', edits: 'Edits', full: 'Full' };
 const PERM_HINTS = {
   plan: 'Read-only for both — Claude and Codex can view files here but can’t edit or run anything.',
   edits: 'Claude: can create/edit files, shell commands still blocked. Codex: its sandbox can’t separate the two, so this also allows shell commands scoped to this folder.',
@@ -556,24 +547,37 @@ function updateContextLabel() {
   currentContextLabel.textContent = project ? `📁 ${project.name}` : 'Global chat';
 }
 
+// The project's file-access mode lives in the composer (right before the
+// routing pill) rather than the sidebar — it's the thing you actually want
+// in view while typing a message to that project, not tucked in Insights.
 function syncProjectPermPanel() {
   const project = state.projects.find((p) => p.id === state.currentProjectId);
-  projectPermPanel.hidden = !project;
+  projAccessWrap.hidden = !project;
+  projAccessPopover.hidden = true;
   if (!project) return;
-  projectPermSegmented.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.mode === project.permission_mode));
-  projectPermHint.textContent = PERM_HINTS[project.permission_mode];
+  projAccessPill.textContent = PERM_LABELS[project.permission_mode];
+  projAccessPill.title = PERM_HINTS[project.permission_mode];
+  projAccessPopover.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.mode === project.permission_mode));
 }
-projectPermSegmented.addEventListener('click', async (e) => {
-  const btn = e.target.closest('button');
-  const project = state.projects.find((p) => p.id === state.currentProjectId);
-  if (!btn || !project) return;
-  if (btn.dataset.mode === 'full' && !confirm('Allow Claude to run shell commands and edit files in this project with no restrictions?')) return;
-  const updated = await getJSON(`/api/projects/${project.id}`, {
-    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ permissionMode: btn.dataset.mode })
+projAccessPill.addEventListener('click', (e) => {
+  e.stopPropagation();
+  projAccessPopover.hidden = !projAccessPopover.hidden;
+});
+projAccessPopover.querySelectorAll('button').forEach((btn) => {
+  btn.addEventListener('click', async () => {
+    const project = state.projects.find((p) => p.id === state.currentProjectId);
+    if (!project) return;
+    if (btn.dataset.mode === 'full' && !confirm('Allow Claude to run shell commands and edit files in this project with no restrictions?')) return;
+    const updated = await getJSON(`/api/projects/${project.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ permissionMode: btn.dataset.mode })
+    });
+    Object.assign(project, updated);
+    renderProjects();
+    syncProjectPermPanel();
   });
-  Object.assign(project, updated);
-  renderProjects();
-  syncProjectPermPanel();
+});
+document.addEventListener('click', (e) => {
+  if (!projAccessPopover.hidden && !projAccessPopover.contains(e.target) && e.target !== projAccessPill) projAccessPopover.hidden = true;
 });
 
 async function addProject() {

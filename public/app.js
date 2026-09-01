@@ -97,6 +97,59 @@ function escapeHtml(s) {
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[c]));
 }
+
+// ---------- rich message rendering ----------
+// Chat content is markdown (headings, lists, tables, code, links) from
+// every backend, including the user's own typed text — rendering it as
+// plain escaped text (the old behavior) made fenced code and formatting
+// show up as literal asterisks/backticks. marked -> DOMPurify (never trust
+// model output enough to skip sanitizing, even though it's not
+// adversarial). A ```mermaid fence renders as a live diagram inline using
+// the same mermaid.js already loaded for the Visualize feature, since
+// that's the most useful "more visualization" a chat message can carry.
+if (window.marked) marked.setOptions({ gfm: true, breaks: true });
+
+function renderMarkdown(text) {
+  if (!text) return '';
+  const mermaidBlocks = [];
+  const withPlaceholders = text.replace(/```mermaid\n([\s\S]*?)```/g, (_, code) => {
+    const idx = mermaidBlocks.push(code.trim()) - 1;
+    return `\n\n<div data-mermaid-placeholder="${idx}"></div>\n\n`;
+  });
+
+  let html = window.marked && window.DOMPurify
+    ? DOMPurify.sanitize(marked.parse(withPlaceholders))
+    : escapeHtml(text);
+
+  html = html.replace(/<a /g, '<a target="_blank" rel="noopener noreferrer" ');
+  html = html.replace(/<div data-mermaid-placeholder="(\d+)"><\/div>/g, (_, idx) => {
+    const source = mermaidBlocks[Number(idx)];
+    return `<div class="mermaid-wrap" data-source="${escapeHtml(source)}"><pre class="mermaid">${escapeHtml(source)}</pre></div>`;
+  });
+  return html;
+}
+
+// Runs mermaid on every diagram in the chat log, and makes code blocks +
+// diagrams tappable for a bigger view — the "render more beautifully on
+// tap" behavior. Called after every re-render of the message list.
+function enhanceRichContent(container) {
+  if (window.mermaid) {
+    const nodes = container.querySelectorAll('.mermaid');
+    if (nodes.length) window.mermaid.run({ nodes }).catch(() => {});
+  }
+  container.querySelectorAll('.bubble pre:not(.mermaid)').forEach((pre) => {
+    pre.addEventListener('click', () => {
+      const code = pre.querySelector('code');
+      const lang = code?.className.match(/language-(\w+)/)?.[1];
+      openModal(lang ? `Code · ${lang}` : 'Code', `<pre style="white-space:pre-wrap; overflow-x:auto; font-size:12.5px; margin:0;">${escapeHtml(code?.textContent ?? pre.textContent)}</pre>`, { wide: true });
+    });
+  });
+  container.querySelectorAll('.mermaid-wrap').forEach((wrap) => {
+    wrap.addEventListener('click', () => {
+      openModal('Diagram', `<pre class="mermaid">${escapeHtml(wrap.dataset.source)}</pre>`, { wide: true });
+    });
+  });
+}
 const BACKEND_META = {
   ollama: { label: 'Local', cls: 'local' },
   claude: { label: 'Claude', cls: 'claude' },
@@ -245,7 +298,7 @@ function renderConversation() {
   const html = state.conversation.map((m, i) => {
     if (m.role === 'user') {
       const thumbs = m.images?.length ? `<div class="thumbs">${m.images.map((src) => `<img src="${src}" />`).join('')}</div>` : '';
-      return `<div class="msg user">${thumbs}<div class="bubble">${escapeHtml(m.content)}</div></div>`;
+      return `<div class="msg user">${thumbs}<div class="bubble rich">${renderMarkdown(m.content)}</div></div>`;
     }
     if (m.pending) {
       return `<div class="msg assistant" data-i="${i}">
@@ -263,7 +316,7 @@ function renderConversation() {
     const tokenTotal = (m.meta?.tokensIn ?? 0) + (m.meta?.tokensOut ?? 0);
     return `<div class="msg assistant" data-i="${i}">
       ${generated}
-      <div class="bubble">${escapeHtml(m.content)}</div>
+      <div class="bubble rich">${renderMarkdown(m.content)}</div>
       <div class="msg-meta">${badge(m.backend)} <span>${fmtMs(m.meta?.latencyMs)} · ${fmtMoney(m.meta?.costUsd)}${tokenTotal ? ` · ${fmtTokens(tokenTotal)} tok (${fmtTokens(m.meta?.tokensIn)} in / ${fmtTokens(m.meta?.tokensOut)} out)` : ''}${m.meta?.score != null ? ` · score ${m.meta.score}` : ''}</span></div>
       ${viz ? `<button class="viz-btn" data-viz-open="${i}">${icon('sparkles', 12)} Visualize</button>` : ''}
     </div>`;
@@ -271,6 +324,7 @@ function renderConversation() {
 
   messagesInner.innerHTML = html || '';
   if (!state.conversation.length) messagesInner.appendChild(emptyState);
+  enhanceRichContent(messagesInner);
   messagesInner.querySelectorAll('[data-viz-open]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const m = state.conversation[Number(btn.dataset.vizOpen)];

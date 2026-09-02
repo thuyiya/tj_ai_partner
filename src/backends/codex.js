@@ -35,7 +35,10 @@ const PERMISSION_NOTICES = {
 // continuing "in the background" is never true here.
 const NO_BACKGROUND_NOTICE = 'Important about how you are being run: this is a single, one-shot, non-interactive invocation. There is no persistent process after you finish responding — once your final answer is sent, this process exits completely and nothing continues running. Never say you have "kicked off" something "in the background", that you will "report back once it finishes", or anything implying work continues after this response — that is never true here. Do everything you can synchronously, within this single response, before answering, and your final answer must describe only what you actually completed (or actually could not do), not what you intend to do next.';
 
-const TIMEOUT_MS = 300_000;
+// Matches claude.js's TIMEOUT_MS — same reasoning: 300s was cutting off
+// genuinely complex real agentic tasks (confirmed via SIGTERM exit codes),
+// not runaway/stuck processes.
+const TIMEOUT_MS = 1_200_000;
 
 function buildPrompt(prompt, { history = [], permissionMode } = {}) {
   const notice = [NO_BACKGROUND_NOTICE, PERMISSION_NOTICES[permissionMode]].filter(Boolean).join('\n\n');

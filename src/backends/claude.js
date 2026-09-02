@@ -55,7 +55,12 @@ const PERMISSION_NOTICES = {
 // regardless of permission tier — so this is told to the model unconditionally.
 const NO_BACKGROUND_NOTICE = 'Important about how you are being run: this is a single, one-shot, non-interactive invocation. There is no persistent process after you finish responding — once your final answer is sent, this process exits completely and nothing continues running, including any Task-tool sub-agents you delegate. Never say you have "kicked off" something "in the background", that you will "report back once it finishes", or anything implying work continues after this response — that is never true here. Do everything you can synchronously, within this single response, before answering, and your final answer must describe only what you actually completed (or actually could not do), not what you intend to do next.';
 
-const TIMEOUT_MS = 300_000;
+// 300s was too short — confirmed via exit code 143 (SIGTERM, this timeout
+// firing) on a genuinely complex real task (reconciling two project trees,
+// weighing a multi-option decision) that just needed more than 5 minutes of
+// real exploration. 20 minutes gives real multi-file agentic work room
+// while still bounding a genuinely stuck process.
+const TIMEOUT_MS = 1_200_000;
 
 function buildPrompt(prompt, { history = [], imagePaths = [] } = {}) {
   const parts = [];

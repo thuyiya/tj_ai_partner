@@ -21,14 +21,28 @@ const SANDBOX_FLAGS = {
   full: ['--sandbox', 'danger-full-access']
 };
 
+// Same reasoning as Claude's PERMISSION_NOTICES (claude.js) — a sandboxed
+// call has no idea *why* a write/command got refused unless told, and will
+// otherwise narrate work it never actually did. Codex has no dedicated
+// system-prompt flag, so this goes into the prompt text itself instead.
+const PERMISSION_NOTICES = {
+  plan: 'You are running with a read-only sandbox for this project: any file write or shell command will be blocked by the OS sandbox itself. Describe a concrete plan or the code itself in your answer instead, and say plainly that actually creating/editing files requires switching this project to Edits or Full access first.'
+};
+
+// Same reasoning as Claude's NO_BACKGROUND_NOTICE (claude.js) — applies
+// regardless of sandbox tier. `codex exec` is one bounded, synchronous
+// process; once it exits there is nothing left running, so any claim of
+// continuing "in the background" is never true here.
+const NO_BACKGROUND_NOTICE = 'Important about how you are being run: this is a single, one-shot, non-interactive invocation. There is no persistent process after you finish responding — once your final answer is sent, this process exits completely and nothing continues running. Never say you have "kicked off" something "in the background", that you will "report back once it finishes", or anything implying work continues after this response — that is never true here. Do everything you can synchronously, within this single response, before answering, and your final answer must describe only what you actually completed (or actually could not do), not what you intend to do next.';
+
 const TIMEOUT_MS = 300_000;
 
-function buildPrompt(prompt, { history = [] } = {}) {
-  if (!history.length) return prompt;
-  const transcript = history
-    .map((turn) => `${turn.role === 'user' ? 'User' : 'Assistant'}: ${turn.content}`)
-    .join('\n');
-  return `Conversation so far:\n${transcript}\n\nUser: ${prompt}`;
+function buildPrompt(prompt, { history = [], permissionMode } = {}) {
+  const notice = [NO_BACKGROUND_NOTICE, PERMISSION_NOTICES[permissionMode]].filter(Boolean).join('\n\n');
+  const transcript = history.length
+    ? `Conversation so far:\n${history.map((turn) => `${turn.role === 'user' ? 'User' : 'Assistant'}: ${turn.content}`).join('\n')}\n\n`
+    : '';
+  return `${notice}\n\n${transcript}User: ${prompt}`;
 }
 
 // Runs Codex CLI in non-interactive `exec` mode using whatever auth is

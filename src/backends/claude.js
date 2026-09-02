@@ -33,6 +33,28 @@ const PERMISSION_FLAGS = {
   full: ['--permission-mode', 'bypassPermissions', '--safe-mode']
 };
 
+// Without this, Claude has no idea *why* a tool call got refused, so it
+// narrates around it — a Plan-mode call denied every write tool still
+// needs to be told that's why, or it just talks past the refusal.
+const PERMISSION_NOTICES = {
+  plan: 'You are running in read-only PLAN mode for this project: you have no Edit, Write, MultiEdit, NotebookEdit, or Bash/shell tool available, and nothing you do here can touch any file on disk. Describe a concrete plan or the code itself in your answer instead, and say plainly that actually creating/editing files requires switching this project to Edits or Full access first.',
+  edits: 'You are running in EDITS mode for this project: you can create and edit files directly, but you have no Bash/shell tool — you cannot run commands (no npm install, no build scripts, no git, no starting a dev server). Do the file work you can, and be explicit about any remaining step that needs a shell command, since the user will have to run that themselves.'
+};
+
+// Applies to every permission tier, including Full — verified by tracing a
+// real production case: a 'full'-permission run (no restrictions at all)
+// still answered "I've kicked off the build in the background... I'll
+// report back with what's done", after 300s and 12.8k output tokens of
+// real tool use — and the target folder was confirmed completely empty
+// afterward. The actual bug wasn't a permission gap; it's architectural.
+// This app calls `claude -p` as one bounded, synchronous process: whatever
+// Task-tool sub-agents it delegates must complete before that process's
+// single terminal `result` event fires, because once this process exits
+// there is no persistent Claude process left to "continue" anything. "I'll
+// report back later" describes a capability this integration cannot offer,
+// regardless of permission tier — so this is told to the model unconditionally.
+const NO_BACKGROUND_NOTICE = 'Important about how you are being run: this is a single, one-shot, non-interactive invocation. There is no persistent process after you finish responding — once your final answer is sent, this process exits completely and nothing continues running, including any Task-tool sub-agents you delegate. Never say you have "kicked off" something "in the background", that you will "report back once it finishes", or anything implying work continues after this response — that is never true here. Do everything you can synchronously, within this single response, before answering, and your final answer must describe only what you actually completed (or actually could not do), not what you intend to do next.';
+
 const TIMEOUT_MS = 300_000;
 
 function buildPrompt(prompt, { history = [], imagePaths = [] } = {}) {
@@ -66,7 +88,13 @@ function buildPrompt(prompt, { history = [], imagePaths = [] } = {}) {
 export function runClaude(prompt, opts = {}) {
   const { cwd, permissionMode = 'plan', onEvent, apiKey } = opts;
   const fullPrompt = buildPrompt(prompt, opts);
-  const flags = PERMISSION_FLAGS[permissionMode] ?? PERMISSION_FLAGS.plan;
+  // Copied, not a reference to the shared constant — pushing onto the
+  // module-level array directly would accumulate a duplicate notice flag
+  // on every single call for that permission tier, for the process's
+  // entire lifetime.
+  const flags = [...(PERMISSION_FLAGS[permissionMode] ?? PERMISSION_FLAGS.plan)];
+  const notice = [NO_BACKGROUND_NOTICE, PERMISSION_NOTICES[permissionMode]].filter(Boolean).join('\n\n');
+  flags.push('--append-system-prompt', notice);
   const startedAt = Date.now();
 
   return new Promise((resolve, reject) => {

@@ -1313,40 +1313,72 @@ function usageTotal(usage) {
 // reasoning / final answer" step before persisting, so this sum is already
 // the complete total — no separate remainder math needed. Flags a category
 // only when the numbers themselves show it dominated — never a guess.
+// Categories whose work is an inherent file-system operation — only
+// Claude/Codex have any file-system tool at all in this app, so these can
+// never move to local no matter how the task is split. Shown explicitly so
+// "why wasn't this delegated" has a concrete, category-by-category answer
+// instead of a repeated general explanation in chat.
+const FILE_ACCESS_CATEGORIES = new Set(['Search', 'Read file', 'Find files', 'Write file', 'Edit file', 'Run command']);
+
 function openTokenBreakdown(h) {
-  const groups = new Map();
+  const groups = new Map(); // label -> { tokens, delegatedToLocal }
   for (const step of h.timeline) {
     if (!step.usage) continue;
     const key = step.title;
-    groups.set(key, (groups.get(key) ?? 0) + usageTotal(step.usage));
+    const entry = groups.get(key) ?? { tokens: 0, delegatedToLocal: Boolean(step.delegatedToLocal) };
+    entry.tokens += usageTotal(step.usage);
+    groups.set(key, entry);
   }
-  const total = [...groups.values()].reduce((a, b) => a + b, 0);
-  const rows = [...groups.entries()].sort((a, b) => b[1] - a[1]);
+  const total = [...groups.values()].reduce((a, b) => a + b.tokens, 0);
+  const rows = [...groups.entries()].sort((a, b) => b[1].tokens - a[1].tokens);
+  const localTokens = rows.filter(([, v]) => v.delegatedToLocal).reduce((a, [, v]) => a + v.tokens, 0);
 
   const rowsHtml = rows.length
-    ? rows.map(([label, tokens]) => {
+    ? rows.map(([label, { tokens, delegatedToLocal }]) => {
         const pct = total ? Math.round((tokens / total) * 100) : 0;
+        const requiresFileAccess = FILE_ACCESS_CATEGORIES.has(label);
         return `
         <div style="margin-bottom:10px;">
-          <div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;">
-            <span>${escapeHtml(label)}</span>
-            <span style="color:var(--muted);">${fmtTokens(tokens)} tok · ${pct}%</span>
+          <div style="display:flex; justify-content:space-between; align-items:center; font-size:12.5px; margin-bottom:4px; gap:8px;">
+            <span style="display:flex; align-items:center; gap:6px;">
+              ${escapeHtml(label)}
+              ${delegatedToLocal ? badge('ollama') : requiresFileAccess ? '<span class="empty-mini" style="margin:0;" title="Only Claude/Codex have file-system tools — this can never run locally.">🔒 file access</span>' : ''}
+            </span>
+            <span style="color:var(--muted); white-space:nowrap;">${fmtTokens(tokens)} tok · ${pct}%</span>
           </div>
-          <div class="task-progress-track"><div class="task-progress-fill completed" style="width:${pct}%; background:${pct >= 50 ? 'var(--status-critical)' : 'var(--series-local)'};"></div></div>
+          <div class="task-progress-track"><div class="task-progress-fill completed" style="width:${pct}%; background:${delegatedToLocal ? 'var(--series-local)' : pct >= 50 ? 'var(--status-critical)' : 'var(--series-claude)'};"></div></div>
         </div>`;
       }).join('')
     : '<div class="empty-mini">No per-step usage recorded for this run.</div>';
 
   const dominant = rows[0];
-  const warning = dominant && total && dominant[1] / total >= 0.5
-    ? `<div class="empty-mini" style="margin-bottom:12px; color:var(--status-critical);">⚠ "${escapeHtml(dominant[0])}" alone used ${Math.round((dominant[1] / total) * 100)}% of this run's tokens.</div>`
+  const warning = dominant && total && dominant[1].tokens / total >= 0.5
+    ? `<div class="empty-mini" style="margin-bottom:12px; color:var(--status-critical);">⚠ "${escapeHtml(dominant[0])}" alone used ${Math.round((dominant[1].tokens / total) * 100)}% of this run's tokens.${FILE_ACCESS_CATEGORIES.has(dominant[0]) ? ' This is a file-system operation — only Claude/Codex can do it, so it cannot be delegated to a local model.' : ''}</div>`
     : '';
+
+  // Claude/Codex vs. local-delegated split — "how it worked" at a glance.
+  // Note: a delegated step's *tokens* are still Claude's own orchestration
+  // overhead (the tool call + result exchange), not the local model's own
+  // generation, which is free and untracked here — this bar shows which
+  // steps were delegated, not that the local share of the bill is $0.
+  const localPct = total ? Math.round((localTokens / total) * 100) : 0;
+  const splitBar = total ? `
+    <div style="margin-bottom:16px;">
+      <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--muted); margin-bottom:4px;">
+        <span>${badge(h.backend)} orchestration ${100 - localPct}%</span>
+        <span>${badge('ollama')} delegated ${localPct}%</span>
+      </div>
+      <div style="display:flex; height:8px; border-radius:4px; overflow:hidden;">
+        <div style="width:${100 - localPct}%; background:var(--series-claude);"></div>
+        <div style="width:${localPct}%; background:var(--series-local);"></div>
+      </div>
+    </div>` : '';
 
   openModal(
     `Token breakdown`,
     `<div class="task-meta-row" style="margin-bottom:6px;">${badge(h.backend)} <span style="color:var(--muted);">${fmtTokens(total)} tok processed${h.costUsd ? ` · ${fmtMoney(h.costUsd)} billed` : ''}</span></div>
      <div class="empty-mini" style="margin-bottom:14px;">This counts every turn's input, output, and cache read/write — much larger than the ${fmtTokens((h.tokensIn ?? 0) + (h.tokensOut ?? 0))} tok shown on the chat message itself, which is only the final response's own request/reply size. Cached context is typically billed far below full price.</div>
-     ${warning}${rowsHtml}`
+     ${splitBar}${warning}${rowsHtml}`
   );
 }
 

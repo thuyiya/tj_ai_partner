@@ -92,6 +92,13 @@ function claudeTimelineStep(block) {
     case 'Grep': return { icon: 'search', title: 'Search', subtitle: input.pattern, detail: `pattern: ${input.pattern}\npath: ${input.path ?? '.'}` };
     case 'Glob': return { icon: 'folder', title: 'Find files', subtitle: input.pattern, detail: input.pattern };
     case 'WebFetch': return { icon: 'globe', title: 'Fetch URL', subtitle: input.url, detail: input.url };
+    // The local-model MCP bridge (src/mcp/localModelServer.js) — flagged with
+    // delegatedToLocal so the Agents-tab timeline and token breakdown can
+    // show this step as free local work, distinct from Claude's own tool
+    // calls, even though the orchestration turn itself is still billed to
+    // Claude (the text generation inside it was not).
+    case 'mcp__local-model__ask_local_model':
+      return { icon: 'bot', title: 'Delegated to local model', subtitle: (input.prompt ?? '').slice(0, 100), detail: input.prompt, delegatedToLocal: true };
     default: return { icon: 'code-2', title: block.name, subtitle: '', detail: JSON.stringify(input).slice(0, 500) };
   }
 }

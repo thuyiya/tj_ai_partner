@@ -1,6 +1,31 @@
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 
 export const CLAUDE_MODEL_LABEL = 'claude (headless, Max plan)';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const LOCAL_MODEL_SERVER_PATH = path.join(__dirname, '..', 'mcp', 'localModelServer.js');
+
+// Registered only for edits/full — a read-only Plan-mode call has nothing
+// to write local-model drafts into anyway. process.execPath (not a bare
+// "node") so this resolves to the exact Node binary already running this
+// app, regardless of what's on the inherited PATH.
+function mcpConfigFlags() {
+  return ['--mcp-config', JSON.stringify({
+    mcpServers: { 'local-model': { command: process.execPath, args: [LOCAL_MODEL_SERVER_PATH] } }
+  })];
+}
+
+// Told to the model alongside the permission notices — the tool's own MCP
+// description covers *how* to call it; this covers *that it exists and
+// when it's worth reaching for*, since a model won't necessarily think to
+// look for a cost-saving option unprompted. Named exactly as it actually
+// appears in the tool list (verified: MCP tools are namespaced
+// mcp__<server>__<tool>, and load as a deferred tool needing its own
+// ToolSearch fetch first) — spelling it out here saves the exploratory
+// searches an unprefixed name would cost.
+const LOCAL_MODEL_BRIDGE_NOTICE = 'You have a deferred MCP tool available named "mcp__local-model__ask_local_model" (fetch its schema via ToolSearch first, e.g. select:mcp__local-model__ask_local_model) — a free, fast local model you can delegate bulk/repetitive/boilerplate text generation to (e.g. drafting similar placeholder content for several pages, generating routine boilerplate from a clear pattern) — this saves real cost. It cannot read files or see this conversation, so give it a fully self-contained prompt, and always review what it returns before using it, since it is much less reliable than you. Use your own judgment for anything that actually needs your reasoning or verification — this is for offloading grunt work, not delegating the task.';
 
 // Verified empirically (not just from docs) against a scratch directory —
 // each tier was tested asking Claude to both write a file and run a shell
@@ -14,23 +39,26 @@ export const CLAUDE_MODEL_LABEL = 'claude (headless, Max plan)';
 // since it's the default for a brand-new project and for global (no-project)
 // chat, where the promise made to the user is "this can't touch your files."
 //
-// --safe-mode on every tier: confirmed empirically that this headless call
-// otherwise inherits whatever hooks/plugins/MCP servers are configured in
+// --setting-sources '' on every tier: confirmed empirically that this
+// headless call otherwise inherits whatever hooks/plugins are configured in
 // the *user's own* ~/.claude/settings.json — e.g. a SessionStart hook fired
 // and injected unrelated plugin instructions into the automated call, which
 // is both nondeterministic (depends on whatever's installed on this Mac)
 // and a plausible source of the intermittent "no result" failures seen in
-// testing. --safe-mode strips hooks/plugins/MCP/CLAUDE.md while explicitly
-// leaving auth, model selection, and permissions untouched — verified via a
-// direct spawn that OAuth login still works and a real result still comes
-// back with it on. --restricted already implies the same isolation (it
-// ignores user/project/local settings files) but doesn't apply to 'full'
-// (mutually exclusive with bypassPermissions), so this is added uniformly
-// rather than relying on that as the only guard.
+// testing. This was originally --safe-mode instead, which fixed the same
+// problem but ALSO disables MCP servers passed via --mcp-config in the same
+// invocation — confirmed via a direct A/B spawn — which broke the local-
+// model bridge below before it ever worked. --setting-sources '' verified
+// to isolate the exact same hook/plugin pollution (no hook_started event,
+// clean result) while leaving an explicit --mcp-config server discoverable,
+// and auth/model selection/permissions untouched. --restricted already
+// implies similar isolation (it ignores user/project/local settings files)
+// but doesn't apply to 'full' (mutually exclusive with bypassPermissions),
+// so this is added uniformly rather than relying on that as the only guard.
 const PERMISSION_FLAGS = {
-  plan: ['--restricted', '--permission-mode', 'plan', '--disallowedTools', 'Edit Write MultiEdit NotebookEdit', '--safe-mode'],
-  edits: ['--restricted', '--permission-mode', 'acceptEdits', '--safe-mode'],
-  full: ['--permission-mode', 'bypassPermissions', '--safe-mode']
+  plan: ['--restricted', '--permission-mode', 'plan', '--disallowedTools', 'Edit Write MultiEdit NotebookEdit', '--setting-sources', ''],
+  edits: ['--restricted', '--permission-mode', 'acceptEdits', '--setting-sources', ''],
+  full: ['--permission-mode', 'bypassPermissions', '--setting-sources', '']
 };
 
 // Without this, Claude has no idea *why* a tool call got refused, so it
@@ -98,7 +126,10 @@ export function runClaude(prompt, opts = {}) {
   // on every single call for that permission tier, for the process's
   // entire lifetime.
   const flags = [...(PERMISSION_FLAGS[permissionMode] ?? PERMISSION_FLAGS.plan)];
-  const notice = [NO_BACKGROUND_NOTICE, PERMISSION_NOTICES[permissionMode]].filter(Boolean).join('\n\n');
+  const canWrite = permissionMode === 'edits' || permissionMode === 'full';
+  if (canWrite) flags.push(...mcpConfigFlags());
+  const notice = [NO_BACKGROUND_NOTICE, PERMISSION_NOTICES[permissionMode], canWrite ? LOCAL_MODEL_BRIDGE_NOTICE : null]
+    .filter(Boolean).join('\n\n');
   flags.push('--append-system-prompt', notice);
   const startedAt = Date.now();
 

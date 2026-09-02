@@ -40,6 +40,42 @@ function recentHistoryForPrompt(history) {
   return history.slice(-4).map((turn) => `${turn.role === 'user' ? 'User' : 'Assistant'}: ${turn.content.slice(0, 300)}`).join('\n');
 }
 
+// Whether a project with real file-edit access should escalate is NOT left
+// to the same multi-purpose routing call below — verified empirically that
+// it should be: asked as part of that larger prompt (backend + local model
+// + subtask plan + calibration examples all competing for attention), a 4B
+// model gave "ollama" 2 times out of 3 on an identical real production
+// prompt, rationalizing that "the user will copy the code in by hand" even
+// after the prompt explicitly told it not to. Isolating this into its own
+// small yes/no question with nothing else to think about was 21/21 correct
+// across repeated runs on both directions (real build requests, plain Q&A,
+// and history-dependent follow-ups like "do it"). A hard technical fact
+// like "local models cannot write files" shouldn't be riding on a
+// probabilistic judgment call anyway — this makes it deterministic instead.
+async function wantsRealFileChange(prompt, history) {
+  const q =
+    `Recent conversation:\n${recentHistoryForPrompt(history)}\n\n` +
+    `Newest user message: "${prompt.slice(0, 1500)}"\n\n` +
+    `Question: is the user asking you to CREATE, ADD, BUILD, IMPLEMENT, FIX, EDIT, or otherwise CHANGE actual files in a software project? The newest message might be short and only make sense given the recent conversation (e.g. "do it", "yes continue" confirms whatever was just being discussed). Answer false if they are only asking what something currently does, how something works, or requesting an explanation/diagnosis — even if the topic is code-related and even if you'd need to read files to answer. Only answer true if they want a real modification actually made.\n\n` +
+    `Examples:\n` +
+    `"What does the settings page do?" -> false (asking about existing behavior)\n` +
+    `"How does the theme provider work?" -> false (explanation request)\n` +
+    `"Why is my build failing?" -> false (diagnostic question, no explicit request to fix it)\n` +
+    `"Build a React app for this prototype using the theme" -> true (real implementation request)\n` +
+    `"Fix the bug in the settings form" -> true (real change request)\n\n` +
+    `Answer with JSON only, matching exactly: {"wantsFileChange": true, "why": "one short phrase"}`;
+
+  const response = await fetch(`${OLLAMA_URL}/api/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: PLANNER_MODEL, prompt: q, format: 'json', think: false, stream: false })
+  });
+  if (!response.ok) throw new Error(`Ollama error ${response.status}`);
+  const data = await response.json();
+  const parsed = JSON.parse(data.response);
+  return parsed.wantsFileChange === true;
+}
+
 function projectContextForPrompt(project) {
   if (!project) return 'No project is open — this is a plain chat with no real files attached. A local answer is just a suggestion in the chat either way, so that\'s not a factor here.';
   if (project.permissionMode === 'plan') {
@@ -91,7 +127,15 @@ export async function planRoute(prompt, { installedModels = [], threshold = 2, p
     `Respond with JSON only, matching exactly:\n` +
     `{"backend":"ollama|claude|codex","localModel":"<exact installed model name, only if backend is ollama>","reasoning":"one short sentence","subtaskPlan":["step 1","step 2"]}`;
 
-  const response = await fetch(`${OLLAMA_URL}/api/generate`, {
+  // Runs alongside the main call (independent, so no added latency in the
+  // common case) only when there's actually a hard fact to enforce — no
+  // project, or a read-only Plan-mode project, has nothing for it to
+  // override, so it's skipped rather than spending a call on a foregone
+  // conclusion.
+  const editAccessOpen = project && project.permissionMode !== 'plan';
+  const gatePromise = editAccessOpen ? wantsRealFileChange(prompt, history).catch(() => false) : Promise.resolve(false);
+
+  const responsePromise = fetch(`${OLLAMA_URL}/api/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     // think:false — confirmed empirically that hybrid-reasoning models
@@ -101,20 +145,32 @@ export async function planRoute(prompt, { installedModels = [], threshold = 2, p
     // this flag.
     body: JSON.stringify({ model: PLANNER_MODEL, prompt: planningPrompt, format: 'json', think: false, stream: false })
   });
+
+  const [mustEscalate, response] = await Promise.all([gatePromise, responsePromise]);
   if (!response.ok) throw new Error(`Ollama error ${response.status}`);
 
   const data = await response.json();
   const parsed = JSON.parse(data.response);
 
   const validBackends = new Set(['ollama', 'claude', 'codex']);
-  const backend = validBackends.has(parsed.backend) ? parsed.backend : 'ollama';
+  let backend = validBackends.has(parsed.backend) ? parsed.backend : 'ollama';
+  let reasoning = typeof parsed.reasoning === 'string' ? parsed.reasoning.slice(0, 300) : 'planner decision';
+
+  // The deterministic override: a real file-change request against a
+  // project with edit access always escalates, regardless of what the main
+  // call's own (less reliable, on this specific axis) judgment said.
+  if (mustEscalate && backend === 'ollama') {
+    backend = 'claude';
+    reasoning = 'Deterministic override: a project with real file-edit access is open and this is a real file-change request, not just a question — only Claude/Codex can actually save that change, so a local answer is never correct here regardless of how simple the code looks.';
+  }
+
   const installedNames = new Set(candidatesForPrompt.map((m) => m.name));
   const localModel = backend === 'ollama' && installedNames.has(parsed.localModel) ? parsed.localModel : undefined;
 
   return {
     backend,
     localModel,
-    reasoning: typeof parsed.reasoning === 'string' ? parsed.reasoning.slice(0, 300) : 'planner decision',
+    reasoning,
     subtaskPlan: Array.isArray(parsed.subtaskPlan) ? parsed.subtaskPlan.slice(0, 4).map(String) : []
   };
 }
